@@ -41,19 +41,19 @@ init-pi:
 	cd packer/pi && packer init sdr-bookworm.pkr.hcl
 
 init-proxmox:
-	cd packer/proxmox && packer init fedora-43.pkr.hcl
+	cd packer/proxmox/fedora-base-image && packer init fedora-43.pkr.hcl
 
 # Validate configurations
 validate:
 	cd packer/pi && packer validate sdr-bookworm.pkr.hcl
-	cd packer/proxmox && packer validate fedora-43.pkr.hcl
+	cd packer/proxmox/fedora-base-image && packer validate fedora-43.pkr.hcl
 
 # Build targets
 pi-sdr: init-pi
 	cd packer/pi && packer build sdr-bookworm.pkr.hcl
 
 proxmox-fedora: init-proxmox
-	cd packer/proxmox && packer build fedora-43.pkr.hcl
+	cd packer/proxmox/fedora-base-image && packer build fedora-43.pkr.hcl
 
 # Clean build artifacts
 clean:
