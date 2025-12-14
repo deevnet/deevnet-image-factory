@@ -45,19 +45,19 @@ variable "bridge_name" {
   default = "vmbr0"
 }
 
-# --- Automation Variables ---
-variable "ssh_pubkey_url" {
-  type    = string
-  default = "http://localhost/keys/ssh/a_autoprov_rsa.pub"
-}
-
 source "proxmox-iso" "fedora-kickstart" {
+
+  # --- Packer HTTP server for Kickstart ---
+  http_bind_address = "0.0.0.0"
+  http_port_min     = 8487
+  http_port_max     = 8487
+
   # Boot sequence for Fedora kickstart installation
   boot_command = [
     "<wait5>",
     "c<wait>",
     "<enter><wait>",
-    "linux (cd)/images/pxeboot/vmlinuz inst.stage2=hd:LABEL=Fedora-S-dvd-x86_64-43 ip=dhcp inst.cmdline inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/kickstart.cfg<enter><wait5>",
+    "linux (cd)/images/pxeboot/vmlinuz ip=dhcp rd.neednet=1 inst.stage2=cdrom inst.repo=cdrom inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/kickstart.cfg<enter><wait5>",
     "initrd (cd)/images/pxeboot/initrd.img<enter><wait15>",
     "boot<enter>"
   ]
@@ -70,8 +70,10 @@ source "proxmox-iso" "fedora-kickstart" {
     type         = "scsi"
   }
 
-  # HTTP server for kickstart file
-  http_directory = "http"
+  # HTTP server for kickstart file (templated for {{ .HTTPIP }} substitution)
+  http_content = {
+    "/kickstart.cfg" = file("${path.root}/http/kickstart.cfg")
+  }
 
   # Boot ISO configuration
   boot_iso {
@@ -117,11 +119,6 @@ build {
   # Post-installation provisioning
   provisioner "shell" {
     inline = [
-      # Install SSH key for automation user
-      "curl -fsSL ${var.ssh_pubkey_url} | sudo tee /home/a_autoprov/.ssh/authorized_keys",
-      "sudo chmod 600 /home/a_autoprov/.ssh/authorized_keys",
-      "sudo chown a_autoprov:a_autoprov /home/a_autoprov/.ssh/authorized_keys",
-
       # Install additional packages
       "sudo dnf -y install podman python3-libdnf5",
 
