@@ -71,12 +71,17 @@ source "proxmox-iso" "fedora-kickstart" {
   }
 
   # HTTP server for kickstart file
-  http_directory = "../../../iso/fedora"
+  http_directory = "http"
 
-  # ISO configuration
+  # Boot ISO configuration
+  boot_iso {
+    type         = "ide"
+    iso_file     = var.iso_file
+    iso_checksum = "none"
+    unmount      = true
+  }
+
   insecure_skip_tls_verify = true
-  iso_file                 = var.iso_file
-  iso_checksum             = "none"
 
   # Network configuration
   network_adapters {
@@ -104,7 +109,6 @@ source "proxmox-iso" "fedora-kickstart" {
   qemu_agent           = true
   template_description = "Fedora Server 43-1.6, generated on ${timestamp()}"
   template_name        = "fedora-server-43-1.6"
-  unmount_iso          = true
 }
 
 build {
@@ -113,6 +117,12 @@ build {
   # Post-installation provisioning
   provisioner "shell" {
     inline = [
+      # Install SSH key for automation user
+      "curl -fsSL ${var.ssh_pubkey_url} | sudo tee /home/a_autoprov/.ssh/authorized_keys",
+      "sudo chmod 600 /home/a_autoprov/.ssh/authorized_keys",
+      "sudo chown a_autoprov:a_autoprov /home/a_autoprov/.ssh/authorized_keys",
+
+      # Install additional packages
       "sudo dnf -y install podman python3-libdnf5",
 
       # Prepare Ansible remote_tmp directory
