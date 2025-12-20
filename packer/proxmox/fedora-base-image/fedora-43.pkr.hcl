@@ -65,7 +65,7 @@ source "proxmox-iso" "fedora-kickstart" {
 
   # Disk configuration
   disks {
-    disk_size    = "64G"
+    disk_size    = "256G"
     storage_pool = var.storage_pool
     type         = "scsi"
   }
@@ -99,8 +99,9 @@ source "proxmox-iso" "fedora-kickstart" {
 
   # VM resources
   memory  = 4096
-  cores   = 2
-  sockets = 2
+  cores   = 4
+  sockets = 1
+  cpu_type = "host"
 
   # SSH configuration (user created by kickstart)
   ssh_timeout    = "60m"
