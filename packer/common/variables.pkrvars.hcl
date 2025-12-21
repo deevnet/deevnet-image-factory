@@ -5,8 +5,8 @@
 automation_user = "a_autoprov"
 
 # Artifact server URLs
-artifact_server_url = "http://localhost"
-ssh_pubkey_url      = "http://localhost/keys/ssh/a_autoprov_rsa.pub"
+artifact_server_url = "http://artifacts.dvntm.deevnet.net"
+ssh_pubkey_url      = "http://artifacts.dvntm.deevnet.net/keys/ssh/a_autoprov_rsa.pub"
 
 # Raspberry Pi image sources
-pi_image_base_url = "http://localhost/pi-images"
+pi_image_base_url = "http://artifacts.dvntm.deevnet.net/pi-images"

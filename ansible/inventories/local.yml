@@ -1,0 +1,12 @@
+---
+# Local inventory for Packer chroot builds
+# Used by ansible-local provisioner during image creation
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+  children:
+    packer_builds:
+      hosts:
+        localhost:
