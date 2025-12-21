@@ -1,0 +1,32 @@
+---
+# Raspberry Pi SDR Image Provisioning Playbook
+# This playbook runs during Packer image builds using ansible-local provisioner
+#
+# Purpose: Configure the Pi SDR image with required packages and settings
+#
+# Future additions:
+# - CaribouLite SDR driver installation
+# - Device tree overlay configuration
+# - SDR software stack
+
+- name: Configure Pi SDR Image
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify Ansible is running correctly
+      ansible.builtin.debug:
+        msg: "Ansible provisioning test successful on {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Create marker file to verify provisioning
+      ansible.builtin.copy:
+        dest: /etc/packer-provisioned
+        content: |
+          Image: pi-sdr-bookworm
+          Build Date: {{ ansible_date_time.iso8601 }}
+          Ansible Version: {{ ansible_version.full }}
+        mode: '0644'
+        owner: root
+        group: root
