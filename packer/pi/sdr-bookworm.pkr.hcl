@@ -24,7 +24,7 @@ source "arm" "raspios_bookworm_autoprov" {
 
   image_build_method = "reuse"
   image_path         = "${var.image_name}.img"
-  image_size         = "32G"
+  image_size         = "8G"
   image_type         = "dos"
 
   # Boot + root layout (must match actual Raspberry Pi OS partition table)
