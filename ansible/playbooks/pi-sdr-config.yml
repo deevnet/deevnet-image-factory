@@ -205,9 +205,11 @@
         dest: "{{ chroot_root }}/opt/deevnet/README-sdr.txt"
         mode: "0644"
         content: |
-          Deevnet Pi SDR Image (Bookworm) - CaribouLite Edition
-          =====================================================
+          Pi SDR Image (Bookworm) - CaribouLite Edition
+          =====================================================================================
           This image was baked with CaribouLite SDR HAT support.
+          This build follows Jeff Geerling's blog post about configuring CaribouLite on the Pi
+          https://www.jeffgeerling.com/blog/2025/cariboulite-sdr-hat-sdr-on-raspberry-pi
 
           Included:
             - CaribouLite kernel driver (DKMS)
@@ -269,6 +271,30 @@
       changed_when: true
 
     # ------------------------------------------------------------
+    # Create pisdr user for CaribouLite installation
+    # (install.sh refuses to run as root)
+    # ------------------------------------------------------------
+    - name: Create pisdr user in chroot
+      ansible.builtin.command:
+        cmd: >
+          chroot {{ chroot_root }} useradd -m -s /bin/bash
+          -G sudo,audio,video,adm,dialout,plugdev,gpio,i2c,spi
+          pisdr
+        creates: "{{ chroot_root }}/home/pisdr"
+
+    - name: Set pisdr user password
+      ansible.builtin.shell:
+        cmd: |
+          chroot {{ chroot_root }} bash -c 'echo "pisdr:pisdr" | chpasswd'
+      changed_when: true
+
+    - name: Grant pisdr passwordless sudo
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/sudoers.d/010_pisdr-nopasswd"
+        content: 'pisdr ALL=(ALL) NOPASSWD:ALL'
+        mode: "0440"
+
+    # ------------------------------------------------------------
     # CaribouLite Clone and Patching
     # ------------------------------------------------------------
     - name: Clone CaribouLite repository
@@ -277,12 +303,12 @@
         creates: "{{ chroot_root }}/opt/cariboulite/.git"
       changed_when: true
 
-    - name: Apply PR #210 patch (Bookworm config.txt path compatibility)
-      ansible.builtin.shell:
-        cmd: >
-          chroot {{ chroot_root }} bash -c
-          'cd /opt/cariboulite && curl -fsSL https://patch-diff.githubusercontent.com/raw/cariboulabs/cariboulite/pull/210.patch | git apply -v'
-      changed_when: true
+#    - name: Apply PR #210 patch (Bookworm config.txt path compatibility)
+#      ansible.builtin.shell:
+#        cmd: >
+#          chroot {{ chroot_root }} bash -c
+#          'cd /opt/cariboulite && curl -fsSL https://patch-diff.githubusercontent.com/raw/cariboulabs/cariboulite/pull/210.patch | git apply -v'
+#      changed_when: true
 
     - name: Apply kernel 6.4+ class_create fix (issue #176)
       ansible.builtin.replace:
@@ -291,13 +317,18 @@
         replace: 'class_create(DEVICE_NAME)'
         backup: true
 
+    - name: Set ownership of CaribouLite directory for pisdr
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} chown -R pisdr:pisdr /opt/cariboulite"
+      changed_when: true
+
     # ------------------------------------------------------------
     # CaribouLite Build and Installation
     # ------------------------------------------------------------
     - name: Run CaribouLite install script (non-interactive)
       ansible.builtin.shell:
         cmd: |
-          chroot {{ chroot_root }} bash -c 'cd /opt/cariboulite && yes y | ./install.sh'
+          chroot {{ chroot_root }} su - pisdr -c 'cd /opt/cariboulite && yes y | ./install.sh'
       environment:
         DEBIAN_FRONTEND: noninteractive
       register: cariboulite_install
@@ -305,14 +336,6 @@
       # Build takes 15-30+ minutes in QEMU ARM64 emulation
       async: 3600
       poll: 60
-
-    - name: Wait for CaribouLite install to complete
-      ansible.builtin.async_status:
-        jid: "{{ cariboulite_install.ansible_job_id }}"
-      register: cariboulite_result
-      until: cariboulite_result.finished
-      retries: 60
-      delay: 60
 
     # ------------------------------------------------------------
     # SoapySDRServer Service Enablement

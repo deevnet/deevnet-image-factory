@@ -53,7 +53,7 @@ PI_BOOKWORM_MNT := /mnt/pi-bookworm-image
 PI_PACKER_ARM_CONTAINER := docker.io/mkaczanowski/packer-builder-arm:latest
 
 .PHONY: help init validate clean check-deps check-loop-devices
-.PHONY: pi-bookworm-image pi-sdr pi-sdr-config
+.PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config
 .PHONY: init-pi init-proxmox proxmox-fedora
 
 # ------------------------------------------------------------
@@ -118,9 +118,31 @@ pi-bookworm-image: check-loop-devices $(PI_BOOKWORM_IMAGE_ZIP) $(PI_BOOKWORM_SSH
 		  packer/pi/sdr-bookworm.pkr.hcl
 	echo "$(GREEN)✓ Base Bookworm image ready: $(PI_BOOKWORM_AUTOPROV_IMG)$(NC)"
 
-# Full SDR image = base image + offline config
-pi-sdr: pi-bookworm-image pi-sdr-config
-	echo "$(GREEN)✓ Pi SDR image complete: $(PI_BOOKWORM_AUTOPROV_IMG)$(NC)"
+# Resize root partition to fill 8G image
+pi-resize-image: $(PI_BOOKWORM_AUTOPROV_IMG)
+	echo "$(GREEN)→ Expanding image file to 8G...$(NC)"
+	sudo truncate -s 8G "$(PI_BOOKWORM_AUTOPROV_IMG)"
+	echo "$(GREEN)→ Resizing root partition to fill image...$(NC)"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(PI_BOOKWORM_AUTOPROV_IMG)")"
+	trap 'sudo losetup -d "$$LOOPDEV" 2>/dev/null || true' EXIT
+	sudo partprobe "$$LOOPDEV"
+	sudo udevadm settle
+	: "Expand partition 2 to fill available space"
+	sudo growpart "$$LOOPDEV" 2
+	: "Expand ext4 filesystem"
+	sudo e2fsck -f -y "$${LOOPDEV}p2" || true
+	sudo resize2fs "$${LOOPDEV}p2"
+	echo "$(GREEN)✓ Root partition resized to ~7G$(NC)"
+
+# Compress image for distribution (Pi Imager supports .img.xz natively)
+pi-compress-image: $(PI_BOOKWORM_AUTOPROV_IMG)
+	echo "$(GREEN)→ Compressing image with xz (this may take a few minutes)...$(NC)"
+	sudo xz -k -6 -T0 "$(PI_BOOKWORM_AUTOPROV_IMG)"
+	echo "$(GREEN)✓ Compressed image: $(PI_BOOKWORM_AUTOPROV_IMG).xz$(NC)"
+
+# Full SDR image = base image + resize + offline config + compress
+pi-sdr: pi-bookworm-image pi-resize-image pi-sdr-config pi-compress-image
+	echo "$(GREEN)✓ Pi SDR image complete: $(PI_BOOKWORM_AUTOPROV_IMG).xz$(NC)"
 
 # Offline configuration step (Ansible against mounted image)
 pi-sdr-config: $(PI_BOOKWORM_AUTOPROV_IMG)
@@ -246,6 +268,7 @@ check-deps:
 	command -v xz >/dev/null || MISSING="$$MISSING xz"
 	command -v podman >/dev/null || MISSING="$$MISSING podman"
 	command -v qemu-aarch64-static >/dev/null || MISSING="$$MISSING qemu-user-static"
+	command -v growpart >/dev/null || MISSING="$$MISSING cloud-utils-growpart"
 	if [[ -n "$$MISSING" ]]; then
 		echo "$(RED)✗ Missing dependencies:$$MISSING$(NC)"
 		exit 1
