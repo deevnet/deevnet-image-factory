@@ -135,61 +135,36 @@
     # ------------------------------------------------------------
     # Boot configuration for HAT / SDR prerequisites
     # ------------------------------------------------------------
-    - name: Ensure /boot/config.txt exists
-      ansible.builtin.file:
-        path: "{{ boot_config_txt }}"
-        state: touch
+    - name: Write complete boot config.txt
+      ansible.builtin.copy:
+        dest: "{{ boot_config_txt }}"
         mode: "0644"
+        content: |
+          # For more options and information see
+          # http://rptl.io/configtxt
+          # Some settings may impact device functionality. See link above for details
 
-    - name: Enable SPI in /boot/config.txt
-      when: enable_spi
-      ansible.builtin.lineinfile:
-        path: "{{ boot_config_txt }}"
-        regexp: '^dtparam=spi='
-        line: 'dtparam=spi=on'
-        insertafter: EOF
+          dtparam=audio=off
 
-    - name: Enable I2C in /boot/config.txt
-      when: enable_i2c
-      ansible.builtin.lineinfile:
-        path: "{{ boot_config_txt }}"
-        regexp: '^dtparam=i2c_arm='
-        line: 'dtparam=i2c_arm=on'
-        insertafter: EOF
+          camera_auto_detect=0
+          display_auto_detect=0
+          auto_initramfs=1
 
-    - name: Enable UART in /boot/config.txt
-      when: enable_uart
-      ansible.builtin.lineinfile:
-        path: "{{ boot_config_txt }}"
-        regexp: '^enable_uart='
-        line: 'enable_uart=1'
-        insertafter: EOF
+          # Safer HDMI path during bring-up
+          dtoverlay=vc4-fkms-v3d
+          max_framebuffers=2
 
-    # ------------------------------------------------------------
-    # CaribouLite SDR HAT Boot Configuration
-    # ------------------------------------------------------------
-    - name: Enable I2C VC for CaribouLite
-      ansible.builtin.lineinfile:
-        path: "{{ boot_config_txt }}"
-        regexp: '^dtparam=i2c_vc='
-        line: 'dtparam=i2c_vc=on'
-        insertafter: EOF
+          arm_64bit=1
+          disable_overscan=1
+          arm_boost=1
 
-    - name: Enable SPI1 with 3 chip selects for CaribouLite
-      ansible.builtin.lineinfile:
-        path: "{{ boot_config_txt }}"
-        regexp: '^dtoverlay=spi1-3cs'
-        line: 'dtoverlay=spi1-3cs'
-        insertafter: EOF
+          dtparam=spi=on
+          dtparam=i2c_arm=on
+          enable_uart=1
 
-    # Optional: commonly needed for some HAT overlays
-    # Keep disabled until you know you need it.
-    # - name: Ensure dtparam=audio=off (free PWM pins / avoid conflicts)
-    #   ansible.builtin.lineinfile:
-    #     path: "{{ boot_config_txt }}"
-    #     regexp: '^dtparam=audio='
-    #     line: 'dtparam=audio=off'
-    #     insertafter: EOF
+          # Keep OFF unless explicitly needed
+          #dtparam=i2c_vc=on
+          #dtoverlay=spi1-3cs
 
     # ------------------------------------------------------------
     # CaribouLite / SDR stack hook points
@@ -207,28 +182,38 @@
         content: |
           Pi SDR Image (Bookworm) - CaribouLite Edition
           =====================================================================================
-          This image was baked with CaribouLite SDR HAT support.
-          This build follows Jeff Geerling's blog post about configuring CaribouLite on the Pi
-          https://www.jeffgeerling.com/blog/2025/cariboulite-sdr-hat-sdr-on-raspberry-pi
+          This image is prepared for CaribouLite SDR HAT support.
+          Reference: https://www.jeffgeerling.com/blog/2025/cariboulite-sdr-hat-sdr-on-raspberry-pi
 
-          Included:
-            - CaribouLite kernel driver (DKMS)
-            - SoapySDR with CaribouLite module
-            - SoapySDRServer (enabled at boot for remote access)
+          FIRST BOOT SETUP REQUIRED:
+            CaribouLite source is cloned to /opt/cariboulite but NOT installed.
+            You must run the installer manually with the hardware attached:
 
-          Boot Configuration:
+              cd /opt/cariboulite
+              ./install.sh
+
+            After installation, enable the SoapySDR server if needed:
+
+              sudo systemctl enable --now SoapySDRServer
+
+          Pre-installed:
+            - CaribouLite source code (cloned and patched)
+            - Build dependencies (cmake, dkms, kernel headers, etc.)
+            - SoapySDR tools and modules
+            - SoapySDRServer service file (not enabled at boot)
+
+          Boot Configuration (/boot/firmware/config.txt):
             - SPI enabled (dtparam=spi=on)
             - I2C enabled (dtparam=i2c_arm=on)
-            - I2C_VC enabled (dtparam=i2c_vc=on)
-            - SPI1 with 3CS (dtoverlay=spi1-3cs)
-            - UART enabled
+            - UART enabled (enable_uart=1)
+            - i2c_vc and spi1-3cs are COMMENTED OUT (enable if needed for CaribouLite)
 
-          Verification Commands:
+          Post-Install Verification:
             - Probe SDR: SoapySDRUtil --probe
             - Check service: systemctl status SoapySDRServer
             - Check kernel modules: lsmod | grep smi
 
-          Expected kernel modules:
+          Expected kernel modules (after install.sh):
             - smi_stream_dev
             - bcm2835_smi
 
@@ -323,22 +308,13 @@
       changed_when: true
 
     # ------------------------------------------------------------
-    # CaribouLite Build and Installation
+    # NOTE: CaribouLite install.sh must be run manually on first boot
+    # with the hardware attached. The repo is cloned and patched above.
+    # To install: cd /opt/cariboulite && ./install.sh
     # ------------------------------------------------------------
-    - name: Run CaribouLite install script (non-interactive)
-      ansible.builtin.shell:
-        cmd: |
-          chroot {{ chroot_root }} su - pisdr -c 'cd /opt/cariboulite && yes y | ./install.sh'
-      environment:
-        DEBIAN_FRONTEND: noninteractive
-      register: cariboulite_install
-      changed_when: true
-      # Build takes 15-30+ minutes in QEMU ARM64 emulation
-      async: 3600
-      poll: 60
 
     # ------------------------------------------------------------
-    # SoapySDRServer Service Enablement
+    # SoapySDRServer Service Setup (installed but not enabled at boot)
     # ------------------------------------------------------------
     - name: Check if SoapySDRServer.service exists (/lib path)
       ansible.builtin.stat:
@@ -369,14 +345,5 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Enable SoapySDRServer.service at boot
-      ansible.builtin.file:
-        src: >-
-          {{ (soapy_service_lib.stat.exists | default(false))
-             | ternary('/lib/systemd/system/SoapySDRServer.service',
-                       (soapy_service_usr.stat.exists | default(false))
-                       | ternary('/usr/lib/systemd/system/SoapySDRServer.service',
-                                 '/etc/systemd/system/SoapySDRServer.service')) }}
-        dest: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/SoapySDRServer.service"
-        state: link
-        force: true
+    # NOTE: SoapySDRServer is installed but NOT enabled at boot.
+    # To enable manually: sudo systemctl enable --now SoapySDRServer

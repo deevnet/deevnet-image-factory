@@ -137,7 +137,7 @@ pi-resize-image: $(PI_BOOKWORM_AUTOPROV_IMG)
 # Compress image for distribution (Pi Imager supports .img.xz natively)
 pi-compress-image: $(PI_BOOKWORM_AUTOPROV_IMG)
 	echo "$(GREEN)→ Compressing image with xz (this may take a few minutes)...$(NC)"
-	sudo xz -k -6 -T0 "$(PI_BOOKWORM_AUTOPROV_IMG)"
+	sudo xz -f -k -6 -T0 "$(PI_BOOKWORM_AUTOPROV_IMG)"
 	echo "$(GREEN)✓ Compressed image: $(PI_BOOKWORM_AUTOPROV_IMG).xz$(NC)"
 
 # Full SDR image = base image + resize + offline config + compress
@@ -252,7 +252,7 @@ proxmox-fedora: init-proxmox
 clean:
 	rm -f packer/pi/*.img packer/pi/*.zip
 	rm -f packer/pi/*-manifest.json
-	rm -f "$(PI_BOOKWORM_AUTOPROV_IMG)" "$(PI_BOOKWORM_AUTOPROV_MANIFEST)"
+	rm -f "$(PI_BOOKWORM_AUTOPROV_IMG)" "$(PI_BOOKWORM_AUTOPROV_IMG).xz" "$(PI_BOOKWORM_AUTOPROV_MANIFEST)"
 	rm -f "$(PI_BOOKWORM_SSH_PUBKEY_FILE)"
 
 # ------------------------------------------------------------
