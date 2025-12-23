@@ -24,7 +24,7 @@
     image_name: "pi-sdr-bookworm"
 
     # Common file paths inside the image
-    boot_config_txt: "{{ chroot_root }}/boot/config.txt"
+    # boot_config_txt is set dynamically in pre_tasks (Bookworm uses /boot/firmware/config.txt)
     boot_cmdline_txt: "{{ chroot_root }}/boot/cmdline.txt"
     marker_file: "{{ chroot_root }}/etc/packer-provisioned"
 
@@ -65,6 +65,18 @@
         - "{{ chroot_root }}/etc"
         - "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants"
         - "{{ chroot_root }}/boot"
+
+    # Detect Bookworm boot config location (/boot/firmware/config.txt vs /boot/config.txt)
+    - name: Check for Bookworm boot config location
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/boot/firmware/config.txt"
+      register: boot_firmware_config
+
+    - name: Set boot config path based on OS version
+      ansible.builtin.set_fact:
+        boot_config_txt: >-
+          {{ boot_firmware_config.stat.exists
+             | ternary(chroot_root ~ '/boot/firmware/config.txt', chroot_root ~ '/boot/config.txt') }}
 
   tasks:
     - name: Verify Ansible is running and show host + image paths
@@ -153,6 +165,23 @@
         line: 'enable_uart=1'
         insertafter: EOF
 
+    # ------------------------------------------------------------
+    # CaribouLite SDR HAT Boot Configuration
+    # ------------------------------------------------------------
+    - name: Enable I2C VC for CaribouLite
+      ansible.builtin.lineinfile:
+        path: "{{ boot_config_txt }}"
+        regexp: '^dtparam=i2c_vc='
+        line: 'dtparam=i2c_vc=on'
+        insertafter: EOF
+
+    - name: Enable SPI1 with 3 chip selects for CaribouLite
+      ansible.builtin.lineinfile:
+        path: "{{ boot_config_txt }}"
+        regexp: '^dtoverlay=spi1-3cs'
+        line: 'dtoverlay=spi1-3cs'
+        insertafter: EOF
+
     # Optional: commonly needed for some HAT overlays
     # Keep disabled until you know you need it.
     # - name: Ensure dtparam=audio=off (free PWM pins / avoid conflicts)
@@ -171,37 +200,59 @@
         state: directory
         mode: "0755"
 
-    - name: Drop a placeholder README for SDR baked image
+    - name: Create README for SDR baked image
       ansible.builtin.copy:
         dest: "{{ chroot_root }}/opt/deevnet/README-sdr.txt"
         mode: "0644"
         content: |
-          Deevnet Pi SDR Image (Bookworm)
-          =================================
-          This image was baked offline.
-          Next steps:
-            - Add CaribouLite driver install steps
-            - Add required dt overlays
-            - Add SDR userspace tooling (SoapySDR, gnuradio, etc.)
+          Deevnet Pi SDR Image (Bookworm) - CaribouLite Edition
+          =====================================================
+          This image was baked with CaribouLite SDR HAT support.
+
+          Included:
+            - CaribouLite kernel driver (DKMS)
+            - SoapySDR with CaribouLite module
+            - SoapySDRServer (enabled at boot for remote access)
+
+          Boot Configuration:
+            - SPI enabled (dtparam=spi=on)
+            - I2C enabled (dtparam=i2c_arm=on)
+            - I2C_VC enabled (dtparam=i2c_vc=on)
+            - SPI1 with 3CS (dtoverlay=spi1-3cs)
+            - UART enabled
+
+          Verification Commands:
+            - Probe SDR: SoapySDRUtil --probe
+            - Check service: systemctl status SoapySDRServer
+            - Check kernel modules: lsmod | grep smi
+
+          Expected kernel modules:
+            - smi_stream_dev
+            - bcm2835_smi
+
+          Network SDR Access:
+            The SoapySDRServer runs on port 55132 by default.
+            From a remote machine with SoapySDR installed:
+              SoapySDRUtil --find="driver=remote,remote=<pi-ip>"
+
+          Build Date: {{ ansible_date_time.iso8601 }}
 
     # ------------------------------------------------------------
-    # Optional: run commands inside the image via chroot
-    # Use this for apt installs *if* your offline chroot has network.
-    # If not, keep it disabled and do only file-based configuration.
+    # CaribouLite Build Dependencies (chroot package installation)
     # ------------------------------------------------------------
-    - name: OPTIONAL - verify apt is present in chroot
+    - name: Verify apt is present in chroot
       ansible.builtin.stat:
         path: "{{ chroot_root }}/usr/bin/apt-get"
       register: aptget_stat
 
-    - name: OPTIONAL - update apt cache inside chroot (requires working DNS/network for host)
-      when: false  # flip to true if you want chroot package installs and your host network/DNS is good
+    - name: Update apt cache inside chroot
+      when: aptget_stat.stat.exists
       ansible.builtin.command:
         cmd: "chroot {{ chroot_root }} /usr/bin/apt-get update"
       changed_when: true
 
-    - name: OPTIONAL - install baseline SDR packages inside chroot
-      when: false  # flip to true when ready
+    - name: Install CaribouLite build dependencies
+      when: aptget_stat.stat.exists
       ansible.builtin.command:
         cmd: >
           chroot {{ chroot_root }} /usr/bin/apt-get install -y
@@ -209,4 +260,100 @@
           curl
           ca-certificates
           build-essential
+          cmake
+          libsoapysdr-dev
+          soapysdr-tools
+          soapysdr-module-all
+          raspberrypi-kernel-headers
+          dkms
       changed_when: true
+
+    # ------------------------------------------------------------
+    # CaribouLite Clone and Patching
+    # ------------------------------------------------------------
+    - name: Clone CaribouLite repository
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} git clone https://github.com/cariboulabs/cariboulite.git /opt/cariboulite"
+        creates: "{{ chroot_root }}/opt/cariboulite/.git"
+      changed_when: true
+
+    - name: Apply PR #210 patch (Bookworm config.txt path compatibility)
+      ansible.builtin.shell:
+        cmd: >
+          chroot {{ chroot_root }} bash -c
+          'cd /opt/cariboulite && curl -fsSL https://patch-diff.githubusercontent.com/raw/cariboulabs/cariboulite/pull/210.patch | git apply -v'
+      changed_when: true
+
+    - name: Apply kernel 6.4+ class_create fix (issue #176)
+      ansible.builtin.replace:
+        path: "{{ chroot_root }}/opt/cariboulite/driver/smi_stream_dev.c"
+        regexp: 'class_create\(THIS_MODULE,\s*DEVICE_NAME\)'
+        replace: 'class_create(DEVICE_NAME)'
+        backup: true
+
+    # ------------------------------------------------------------
+    # CaribouLite Build and Installation
+    # ------------------------------------------------------------
+    - name: Run CaribouLite install script (non-interactive)
+      ansible.builtin.shell:
+        cmd: |
+          chroot {{ chroot_root }} bash -c 'cd /opt/cariboulite && yes y | ./install.sh'
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      register: cariboulite_install
+      changed_when: true
+      # Build takes 15-30+ minutes in QEMU ARM64 emulation
+      async: 3600
+      poll: 60
+
+    - name: Wait for CaribouLite install to complete
+      ansible.builtin.async_status:
+        jid: "{{ cariboulite_install.ansible_job_id }}"
+      register: cariboulite_result
+      until: cariboulite_result.finished
+      retries: 60
+      delay: 60
+
+    # ------------------------------------------------------------
+    # SoapySDRServer Service Enablement
+    # ------------------------------------------------------------
+    - name: Check if SoapySDRServer.service exists (/lib path)
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/lib/systemd/system/SoapySDRServer.service"
+      register: soapy_service_lib
+
+    - name: Check if SoapySDRServer.service exists (/usr/lib path)
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/usr/lib/systemd/system/SoapySDRServer.service"
+      register: soapy_service_usr
+
+    - name: Create SoapySDRServer systemd service file (if not installed)
+      when: not (soapy_service_lib.stat.exists | default(false) or soapy_service_usr.stat.exists | default(false))
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/systemd/system/SoapySDRServer.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=SoapySDR Remote Server
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/SoapySDRServer --bind
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable SoapySDRServer.service at boot
+      ansible.builtin.file:
+        src: >-
+          {{ (soapy_service_lib.stat.exists | default(false))
+             | ternary('/lib/systemd/system/SoapySDRServer.service',
+                       (soapy_service_usr.stat.exists | default(false))
+                       | ternary('/usr/lib/systemd/system/SoapySDRServer.service',
+                                 '/etc/systemd/system/SoapySDRServer.service')) }}
+        dest: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/SoapySDRServer.service"
+        state: link
+        force: true
