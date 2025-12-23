@@ -28,14 +28,19 @@ ARTIFACT_URL := http://artifacts.dvntm.deevnet.net
 # Raspberry Pi – Bookworm image pipeline
 # ------------------------------------------------------------
 
+# Image naming components
+PI_IMAGE_PLATFORM := dvntm
+PI_IMAGE_VARIANT  := pi-sdr
+PI_IMAGE_NAME     := raspios-bookworm-$(PI_IMAGE_PLATFORM)-$(PI_IMAGE_VARIANT)
+
 # Base OS image (from artifacts)
 PI_BOOKWORM_IMAGE_XZ_URL := $(ARTIFACT_URL)/pi-images/2025-11-24/2025-11-24-raspios-bookworm-arm64-lite.img.xz
 PI_BOOKWORM_IMAGE_BASE   := $(CURDIR)/packer/pi/raspios-bookworm-base.img
 PI_BOOKWORM_IMAGE_ZIP    := $(CURDIR)/packer/pi/raspios-bookworm-base.zip
 
 # Output artifacts
-PI_BOOKWORM_AUTOPROV_IMG      := $(CURDIR)/raspios-bookworm-autoprov.img
-PI_BOOKWORM_AUTOPROV_MANIFEST := $(CURDIR)/raspios-bookworm-autoprov-manifest.json
+PI_BOOKWORM_AUTOPROV_IMG      := $(CURDIR)/$(PI_IMAGE_NAME).img
+PI_BOOKWORM_AUTOPROV_MANIFEST := $(CURDIR)/$(PI_IMAGE_NAME)-manifest.json
 
 # SSH public key (source of truth = artifacts)
 PI_BOOKWORM_SSH_PUBKEY_URL  := $(ARTIFACT_URL)/keys/ssh/a_autoprov_rsa.pub
@@ -109,6 +114,7 @@ pi-bookworm-image: check-loop-devices $(PI_BOOKWORM_IMAGE_ZIP) $(PI_BOOKWORM_SSH
 		$(PI_PACKER_ARM_CONTAINER) \
 		build \
 		  -var "ssh_pubkey_local_path=/build/$(patsubst $(CURDIR)/%,%,$(PI_BOOKWORM_SSH_PUBKEY_FILE))" \
+		  -var "image_name=$(PI_IMAGE_NAME)" \
 		  packer/pi/sdr-bookworm.pkr.hcl
 	echo "$(GREEN)✓ Base Bookworm image ready: $(PI_BOOKWORM_AUTOPROV_IMG)$(NC)"
 

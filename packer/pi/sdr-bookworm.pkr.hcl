@@ -10,6 +10,12 @@ variable "ssh_pubkey_local_path" {
   default = "/build/build/keys/a_autoprov_rsa.pub"
 }
 
+# Image name (without extension) - passed from Makefile for dynamic naming
+variable "image_name" {
+  type    = string
+  default = "raspios-bookworm-autoprov"
+}
+
 source "arm" "raspios_bookworm_autoprov" {
   # Base image in zip archive (archiver supports zip, not standalone gz/xz)
   file_urls             = ["file:///build/packer/pi/raspios-bookworm-base.zip"]
@@ -17,23 +23,23 @@ source "arm" "raspios_bookworm_autoprov" {
   file_checksum_type    = "none"
 
   image_build_method = "reuse"
-  image_path         = "raspios-bookworm-autoprov.img"
+  image_path         = "${var.image_name}.img"
   image_size         = "4G"
   image_type         = "dos"
 
-  # Boot + root layout
+  # Boot + root layout (must match actual Raspberry Pi OS partition table)
   image_partitions {
     name         = "boot"
     type         = "c"
-    start_sector = "8192"
+    start_sector = "16384"
     filesystem   = "vfat"
-    size         = "256M"
+    size         = "512M"
     mountpoint   = "/boot"
   }
   image_partitions {
     name         = "root"
     type         = "83"
-    start_sector = "532480"
+    start_sector = "1064960"
     filesystem   = "ext4"
     size         = "0"
     mountpoint   = "/"
@@ -49,7 +55,7 @@ source "arm" "raspios_bookworm_autoprov" {
 }
 
 build {
-  name    = "raspios-bookworm-autoprov"
+  name    = var.image_name
   sources = ["source.arm.raspios_bookworm_autoprov"]
 
   # --- Copy pubkey (downloaded by Makefile from artifacts) into the image ---
@@ -90,6 +96,6 @@ build {
   }
 
   post-processor "manifest" {
-    output = "raspios-bookworm-autoprov-manifest.json"
+    output = "${var.image_name}-manifest.json"
   }
 }
