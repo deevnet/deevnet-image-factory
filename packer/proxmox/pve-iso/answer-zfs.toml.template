@@ -1,0 +1,62 @@
+# Proxmox VE Automated Installation Answer File - ZFS Configuration
+#
+# Template variables (replaced at build time):
+#   __PVE_HOSTNAME__    - FQDN (default: pve.local)
+#   __PVE_TIMEZONE__    - Timezone (default: America/New_York)
+#   __PVE_COUNTRY__     - Country code (default: us)
+#   __PVE_KEYBOARD__    - Keyboard layout (default: en-us)
+#   __PVE_EMAIL__       - Admin email (default: root@localhost)
+#   __PVE_ROOT_PASSWORD_HASH__ - Root password hash (openssl passwd -6)
+#   __PVE_SSH_PUBKEYS__ - SSH public keys (newline-separated)
+#
+# See: https://pve.proxmox.com/wiki/Automated_Installation
+
+[global]
+keyboard = "__PVE_KEYBOARD__"
+country = "__PVE_COUNTRY__"
+fqdn = "__PVE_HOSTNAME__"
+mailto = "__PVE_EMAIL__"
+timezone = "__PVE_TIMEZONE__"
+root_password_hashed = "__PVE_ROOT_PASSWORD_HASH__"
+root_ssh_keys = [
+__PVE_SSH_PUBKEYS__
+]
+reboot_on_error = false
+
+[network]
+# DHCP is default; override with static config if needed
+source = "from-dhcp"
+
+# Static network example (uncomment and configure):
+# source = "from-answer"
+# cidr = "__PVE_IP__"
+# gateway = "__PVE_GATEWAY__"
+# dns = "__PVE_DNS__"
+
+[disk-setup]
+filesystem = "zfs"
+# Select all available disks for ZFS (can be filtered)
+# disk_list = ["sda", "sdb"]
+
+[disk-setup.zfs]
+raid = "raid0"
+# For multiple disks, consider:
+# raid = "raid1"   # Mirror (2 disks)
+# raid = "raidz1"  # Single parity (3+ disks)
+# raid = "raidz2"  # Double parity (4+ disks)
+ashift = 12
+compress = "lz4"
+checksum = "on"
+copies = 1
+hdsize = 0
+
+# Optional: post-install webhook notification
+# [post-installation-webhook]
+# url = "https://example.com/webhook"
+# cert_fingerprint = "AA:BB:CC:..."
+
+# Optional: first-boot hook script
+# [first-boot]
+# source = "from-url"
+# url = "https://example.com/first-boot.sh"
+# cert_fingerprint = "AA:BB:CC:..."
