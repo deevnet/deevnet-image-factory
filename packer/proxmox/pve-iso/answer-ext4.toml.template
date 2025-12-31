@@ -1,0 +1,62 @@
+# Proxmox VE Automated Installation Answer File - ext4+LVM Configuration
+#
+# Template variables (replaced at build time):
+#   __PVE_HOSTNAME__    - FQDN (default: pve.local)
+#   __PVE_TIMEZONE__    - Timezone (default: America/New_York)
+#   __PVE_COUNTRY__     - Country code (default: us)
+#   __PVE_KEYBOARD__    - Keyboard layout (default: en-us)
+#   __PVE_EMAIL__       - Admin email (default: root@localhost)
+#   __PVE_ROOT_PASSWORD_HASH__ - Root password hash (openssl passwd -6)
+#   __PVE_SSH_PUBKEYS__ - SSH public keys (newline-separated)
+#
+# See: https://pve.proxmox.com/wiki/Automated_Installation
+
+[global]
+keyboard = "__PVE_KEYBOARD__"
+country = "__PVE_COUNTRY__"
+fqdn = "__PVE_HOSTNAME__"
+mailto = "__PVE_EMAIL__"
+timezone = "__PVE_TIMEZONE__"
+root_password_hashed = "__PVE_ROOT_PASSWORD_HASH__"
+root_ssh_keys = [
+__PVE_SSH_PUBKEYS__
+]
+reboot_on_error = false
+
+[network]
+# DHCP is default; override with static config if needed
+source = "from-dhcp"
+
+# Static network example (uncomment and configure):
+# source = "from-answer"
+# cidr = "__PVE_IP__"
+# gateway = "__PVE_GATEWAY__"
+# dns = "__PVE_DNS__"
+
+[disk-setup]
+filesystem = "ext4"
+# Disk selection - first available disk by default
+# disk_list = ["sda"]
+
+[disk-setup.lvm]
+# Use all available space
+hdsize = 0
+# Swap size in GB (0 = auto)
+swapsize = 8
+# Maximum root filesystem size in GB (0 = use remaining)
+maxroot = 0
+# Maximum data LV size in GB (0 = use remaining)
+maxvz = 0
+# Minimum free LVM space in GB
+minfree = 16
+
+# Optional: post-install webhook notification
+# [post-installation-webhook]
+# url = "https://example.com/webhook"
+# cert_fingerprint = "AA:BB:CC:..."
+
+# Optional: first-boot hook script
+# [first-boot]
+# source = "from-url"
+# url = "https://example.com/first-boot.sh"
+# cert_fingerprint = "AA:BB:CC:..."

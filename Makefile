@@ -52,9 +52,39 @@ PI_BOOKWORM_MNT := /mnt/pi-bookworm-image
 # Container image for ARM build
 PI_PACKER_ARM_CONTAINER := docker.io/mkaczanowski/packer-builder-arm:latest
 
+# ------------------------------------------------------------
+# Proxmox VE ISO – Automated installer pipeline
+# ------------------------------------------------------------
+
+# Proxmox VE ISO source (from artifacts or override)
+PVE_ISO_VERSION ?= 8.4-1
+PVE_ISO_FILENAME := proxmox-ve_$(PVE_ISO_VERSION).iso
+PVE_ISO_URL ?= $(ARTIFACT_URL)/isos/proxmox/$(PVE_ISO_FILENAME)
+PVE_ISO_LOCAL := $(CURDIR)/packer/proxmox/pve-iso/$(PVE_ISO_FILENAME)
+
+# Container for Proxmox ISO tooling
+PVE_ISO_CONTAINER := localhost/pve-iso-builder:latest
+
+# Build variables (can be overridden on command line)
+PVE_HOSTNAME ?= pve.local
+PVE_TIMEZONE ?= America/New_York
+PVE_COUNTRY ?= us
+PVE_KEYBOARD ?= en-us
+PVE_EMAIL ?= root@localhost
+PVE_ROOT_PASSWORD_HASH ?=
+PVE_SSH_PUBKEY ?=
+PVE_ANSWER_URL ?=
+PVE_CERT_FP ?=
+
+# Output paths
+PVE_ISO_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/output
+PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
+
 .PHONY: help init validate clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config
 .PHONY: init-pi init-proxmox proxmox-fedora
+.PHONY: proxmox-pve-iso-container proxmox-pve-iso-zfs proxmox-pve-iso-ext4
+.PHONY: proxmox-pve-iso-http proxmox-pve-pxe proxmox-pve-iso-clean
 
 # ------------------------------------------------------------
 # Help
@@ -73,6 +103,14 @@ help:
 	@echo "  pi-bookworm-image      Build generic Raspberry Pi Bookworm image (autoprov only)"
 	@echo "  pi-sdr                 Build fully baked Raspberry Pi SDR image (base + offline config)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora 43 template"
+	@echo ""
+	@echo "Proxmox VE bare metal ISO:"
+	@echo "  proxmox-pve-iso-container  Build container with Proxmox tooling (one-time)"
+	@echo "  proxmox-pve-iso-zfs        Build ISO with embedded ZFS answer file"
+	@echo "  proxmox-pve-iso-ext4       Build ISO with embedded ext4+LVM answer file"
+	@echo "  proxmox-pve-iso-http       Build ISO for HTTP answer fetch (PXE-ready)"
+	@echo "  proxmox-pve-pxe            Extract kernel/initrd for PXE boot"
+	@echo "  proxmox-pve-iso-clean      Clean PVE ISO build artifacts"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  validate               Validate all Packer configurations"
@@ -241,10 +279,121 @@ check-loop-devices:
 	echo "$(GREEN)✓ Loop devices available$(NC)"
 
 # ------------------------------------------------------------
-# Proxmox
+# Proxmox VM Template
 # ------------------------------------------------------------
 proxmox-fedora: init-proxmox
 	cd packer/proxmox/fedora-base-image && packer build fedora-43.pkr.hcl
+
+# ------------------------------------------------------------
+# Proxmox VE Bare Metal ISO
+# ------------------------------------------------------------
+
+# Build container with Proxmox auto-install tooling
+proxmox-pve-iso-container:
+	echo "$(GREEN)→ Building Proxmox ISO builder container...$(NC)"
+	podman build -t pve-iso-builder -f packer/proxmox/pve-iso/Containerfile packer/proxmox/pve-iso/
+	echo "$(GREEN)✓ Container ready: $(PVE_ISO_CONTAINER)$(NC)"
+
+# Download Proxmox ISO from artifacts
+$(PVE_ISO_LOCAL):
+	echo "$(YELLOW)→ Downloading Proxmox VE ISO...$(NC)"
+	mkdir -p "$(dir $@)"
+	curl -fsSL "$(PVE_ISO_URL)" -o "$@"
+	test -s "$@"
+	echo "$(GREEN)✓ ISO downloaded: $@$(NC)"
+
+# Fetch SSH public key for answer file
+.pve-ssh-pubkey: $(PI_BOOKWORM_SSH_PUBKEY_FILE)
+	@: "Reuse the Pi SSH pubkey fetch target"
+
+# Build ISO with embedded ZFS answer file
+proxmox-pve-iso-zfs: $(PVE_ISO_LOCAL) $(PI_BOOKWORM_SSH_PUBKEY_FILE)
+	echo "$(GREEN)→ Building Proxmox VE ISO with ZFS (embedded answer)...$(NC)"
+	@if [[ -z "$(PVE_ROOT_PASSWORD_HASH)" ]]; then \
+		echo "$(RED)✗ PVE_ROOT_PASSWORD_HASH required$(NC)"; \
+		echo "$(YELLOW)  Generate with: openssl passwd -6 'yourpassword'$(NC)"; \
+		exit 1; \
+	fi
+	mkdir -p "$(PVE_ISO_OUTPUT_DIR)"
+	: "Read SSH key into variable"
+	SSH_KEY="$$(cat "$(PI_BOOKWORM_SSH_PUBKEY_FILE)")"
+	podman run --rm \
+		-v "$(CURDIR)/packer/proxmox/pve-iso":/work:rw \
+		-e PVE_HOSTNAME="$(PVE_HOSTNAME)" \
+		-e PVE_TIMEZONE="$(PVE_TIMEZONE)" \
+		-e PVE_COUNTRY="$(PVE_COUNTRY)" \
+		-e PVE_KEYBOARD="$(PVE_KEYBOARD)" \
+		-e PVE_EMAIL="$(PVE_EMAIL)" \
+		-e PVE_ROOT_PASSWORD_HASH="$(PVE_ROOT_PASSWORD_HASH)" \
+		-e PVE_SSH_PUBKEY="$$SSH_KEY" \
+		-e PVE_FILESYSTEM=zfs \
+		$(PVE_ISO_CONTAINER) \
+		-c "/work/build-iso.sh embedded /work/$(PVE_ISO_FILENAME) /work/output/proxmox-ve-$(PVE_ISO_VERSION)-autoprov-zfs.iso"
+	echo "$(GREEN)✓ ZFS ISO ready: $(PVE_ISO_OUTPUT_DIR)/proxmox-ve-$(PVE_ISO_VERSION)-autoprov-zfs.iso$(NC)"
+
+# Build ISO with embedded ext4+LVM answer file
+proxmox-pve-iso-ext4: $(PVE_ISO_LOCAL) $(PI_BOOKWORM_SSH_PUBKEY_FILE)
+	echo "$(GREEN)→ Building Proxmox VE ISO with ext4+LVM (embedded answer)...$(NC)"
+	@if [[ -z "$(PVE_ROOT_PASSWORD_HASH)" ]]; then \
+		echo "$(RED)✗ PVE_ROOT_PASSWORD_HASH required$(NC)"; \
+		echo "$(YELLOW)  Generate with: openssl passwd -6 'yourpassword'$(NC)"; \
+		exit 1; \
+	fi
+	mkdir -p "$(PVE_ISO_OUTPUT_DIR)"
+	: "Read SSH key into variable"
+	SSH_KEY="$$(cat "$(PI_BOOKWORM_SSH_PUBKEY_FILE)")"
+	podman run --rm \
+		-v "$(CURDIR)/packer/proxmox/pve-iso":/work:rw \
+		-e PVE_HOSTNAME="$(PVE_HOSTNAME)" \
+		-e PVE_TIMEZONE="$(PVE_TIMEZONE)" \
+		-e PVE_COUNTRY="$(PVE_COUNTRY)" \
+		-e PVE_KEYBOARD="$(PVE_KEYBOARD)" \
+		-e PVE_EMAIL="$(PVE_EMAIL)" \
+		-e PVE_ROOT_PASSWORD_HASH="$(PVE_ROOT_PASSWORD_HASH)" \
+		-e PVE_SSH_PUBKEY="$$SSH_KEY" \
+		-e PVE_FILESYSTEM=ext4 \
+		$(PVE_ISO_CONTAINER) \
+		-c "/work/build-iso.sh embedded /work/$(PVE_ISO_FILENAME) /work/output/proxmox-ve-$(PVE_ISO_VERSION)-autoprov-ext4.iso"
+	echo "$(GREEN)✓ ext4 ISO ready: $(PVE_ISO_OUTPUT_DIR)/proxmox-ve-$(PVE_ISO_VERSION)-autoprov-ext4.iso$(NC)"
+
+# Build ISO for HTTP answer fetch (PXE-compatible)
+proxmox-pve-iso-http: $(PVE_ISO_LOCAL)
+	echo "$(GREEN)→ Building Proxmox VE ISO with HTTP answer fetch...$(NC)"
+	@if [[ -z "$(PVE_ANSWER_URL)" ]]; then \
+		echo "$(RED)✗ PVE_ANSWER_URL required$(NC)"; \
+		echo "$(YELLOW)  Example: make proxmox-pve-iso-http PVE_ANSWER_URL=http://example.com/answer.toml$(NC)"; \
+		exit 1; \
+	fi
+	mkdir -p "$(PVE_ISO_OUTPUT_DIR)"
+	podman run --rm \
+		-v "$(CURDIR)/packer/proxmox/pve-iso":/work:rw \
+		-e PVE_ANSWER_URL="$(PVE_ANSWER_URL)" \
+		-e PVE_CERT_FP="$(PVE_CERT_FP)" \
+		$(PVE_ISO_CONTAINER) \
+		-c "/work/build-iso.sh http /work/$(PVE_ISO_FILENAME) /work/output/proxmox-ve-$(PVE_ISO_VERSION)-autoprov-http.iso"
+	echo "$(GREEN)✓ HTTP ISO ready: $(PVE_ISO_OUTPUT_DIR)/proxmox-ve-$(PVE_ISO_VERSION)-autoprov-http.iso$(NC)"
+
+# Extract kernel/initrd for PXE boot
+proxmox-pve-pxe: $(PVE_ISO_LOCAL)
+	echo "$(GREEN)→ Extracting PXE boot artifacts...$(NC)"
+	mkdir -p "$(PVE_PXE_OUTPUT_DIR)"
+	podman run --rm \
+		-v "$(CURDIR)/packer/proxmox/pve-iso":/work:rw \
+		$(PVE_ISO_CONTAINER) \
+		-c "/work/extract-pxe.sh /work/$(PVE_ISO_FILENAME) /work/pxe"
+	: "Generate iPXE script from template"
+	sed "s|__ARTIFACT_URL__|$(ARTIFACT_URL)/isos/proxmox|g" \
+		packer/proxmox/pve-iso/ipxe-proxmox.ipxe.template \
+		> "$(PVE_PXE_OUTPUT_DIR)/ipxe-proxmox.ipxe"
+	echo "$(GREEN)✓ PXE artifacts ready in: $(PVE_PXE_OUTPUT_DIR)$(NC)"
+	echo "$(YELLOW)  Upload linux26, initrd, and ipxe-proxmox.ipxe to artifact server$(NC)"
+
+# Clean PVE ISO build artifacts
+proxmox-pve-iso-clean:
+	rm -rf "$(PVE_ISO_OUTPUT_DIR)" "$(PVE_PXE_OUTPUT_DIR)"
+	rm -f "$(PVE_ISO_LOCAL)"
+	rm -f packer/proxmox/pve-iso/work/*.toml
+	echo "$(GREEN)✓ PVE ISO artifacts cleaned$(NC)"
 
 # ------------------------------------------------------------
 # Clean
