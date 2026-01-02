@@ -1,0 +1,188 @@
+---
+# Raspberry Pi PiDP-11 Image Provisioning Playbook (OFFLINE)
+#
+# This playbook is intended to run against a mounted Raspberry Pi OS image,
+# where the root filesystem is mounted at chroot_root (e.g., /mnt/pi-bookworm-image).
+#
+# It does NOT require the image to boot or have networking.
+#
+# Usage (from Makefile):
+#   sudo ansible-playbook -i ansible/inventories/local.yml ansible/playbooks/pi-pidp11-config.yml \
+#     --extra-vars "chroot_root=/mnt/pi-bookworm-image"
+
+- name: Configure Pi PiDP-11 Image (offline)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars:
+    # REQUIRED: passed in from Makefile
+    chroot_root: "{{ chroot_root | default(omit) }}"
+
+    # Image identity
+    image_name: "pi-pidp11-bookworm"
+
+    # If you want SSH enabled on first boot
+    enable_ssh: true
+
+  pre_tasks:
+    - name: Assert chroot_root provided
+      ansible.builtin.assert:
+        that:
+          - chroot_root is defined
+          - chroot_root | length > 1
+        fail_msg: >
+          chroot_root must be set (e.g. --extra-vars "chroot_root=/mnt/pi-bookworm-image")
+
+    - name: Assert we look like a mounted rootfs
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/etc/os-release"
+      register: osrel
+
+    - name: Fail if mounted rootfs not found
+      ansible.builtin.assert:
+        that:
+          - osrel.stat.exists
+        fail_msg: "No /etc/os-release at {{ chroot_root }} — is the image mounted?"
+
+    - name: Ensure required directories exist in image
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ chroot_root }}/etc"
+        - "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants"
+        - "{{ chroot_root }}/boot"
+
+  tasks:
+    - name: Verify Ansible is running and show host + image paths
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Configuring mounted image at: {{ chroot_root }}"
+
+    - name: Create marker file to verify provisioning
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/packer-provisioned"
+        content: |
+          Image: {{ image_name }}
+          Build Date: {{ ansible_date_time.iso8601 }}
+          Ansible Version: {{ ansible_version.full }}
+        mode: "0644"
+        owner: root
+        group: root
+
+    # ------------------------------------------------------------
+    # SSH enablement
+    # ------------------------------------------------------------
+    - name: Ensure SSH is enabled on first boot (Raspberry Pi OS boot flag)
+      when: enable_ssh
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/boot/ssh"
+        state: touch
+        mode: "0644"
+
+    - name: Check if ssh.service unit exists in image (/lib)
+      when: enable_ssh
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/lib/systemd/system/ssh.service"
+      register: ssh_unit_lib
+
+    - name: Check if ssh.service unit exists in image (/usr/lib)
+      when: enable_ssh
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/usr/lib/systemd/system/ssh.service"
+      register: ssh_unit_usr_lib
+
+    - name: Enable ssh.service by creating symlink (only if unit exists)
+      when:
+        - enable_ssh
+        - (ssh_unit_lib.stat.exists | default(false)) or (ssh_unit_usr_lib.stat.exists | default(false))
+      ansible.builtin.file:
+        # IMPORTANT: this is the target path AS SEEN INSIDE THE IMAGE when it boots
+        src: >-
+          {{ (ssh_unit_lib.stat.exists | default(false))
+              | ternary('/lib/systemd/system/ssh.service', '/usr/lib/systemd/system/ssh.service') }}
+        dest: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/ssh.service"
+        state: link
+        force: true
+
+    # ------------------------------------------------------------
+    # SimH Installation (chroot package installation)
+    # ------------------------------------------------------------
+    - name: Verify apt is present in chroot
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/usr/bin/apt-get"
+      register: aptget_stat
+
+    - name: Update apt cache inside chroot
+      when: aptget_stat.stat.exists
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get update"
+      changed_when: true
+
+    - name: Install simh
+      when: aptget_stat.stat.exists
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get install -y simh"
+      changed_when: true
+
+    # ------------------------------------------------------------
+    # Create pidp11 user
+    # ------------------------------------------------------------
+    - name: Create pidp11 user in chroot
+      ansible.builtin.command:
+        cmd: >
+          chroot {{ chroot_root }} useradd -m -s /bin/bash
+          -G sudo,audio,video,adm,dialout,plugdev,gpio,i2c,spi
+          pidp11
+        creates: "{{ chroot_root }}/home/pidp11"
+
+    - name: Set pidp11 user password
+      ansible.builtin.shell:
+        cmd: |
+          chroot {{ chroot_root }} bash -c 'echo "pidp11:pidp11" | chpasswd'
+      changed_when: true
+
+    - name: Grant pidp11 passwordless sudo
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/sudoers.d/010_pidp11-nopasswd"
+        content: 'pidp11 ALL=(ALL) NOPASSWD:ALL'
+        mode: "0440"
+
+    # ------------------------------------------------------------
+    # Documentation
+    # ------------------------------------------------------------
+    - name: Create directory for image-baked assets
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/opt/deevnet"
+        state: directory
+        mode: "0755"
+
+    - name: Create README for PiDP-11 baked image
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/opt/deevnet/README-pidp11.txt"
+        mode: "0644"
+        content: |
+          Pi PiDP-11 Image (Bookworm)
+          =====================================================================================
+          This image is prepared for PiDP-11 front panel replica support.
+
+          Pre-installed:
+            - simh (PDP-11 and other classic system simulators)
+            - SSH enabled on first boot
+            - a_autoprov user with passwordless sudo (automation)
+            - pidp11 user with passwordless sudo (default password: pidp11)
+
+          SimH Binaries:
+            pdp11 - PDP-11 simulator
+            vax - VAX simulator
+            (and many others in /usr/bin/)
+
+          Login:
+            ssh pidp11@<pi-ip>  (password: pidp11)
+            ssh a_autoprov@<pi-ip>  (SSH key only)
+
+          Build Date: {{ ansible_date_time.iso8601 }}
