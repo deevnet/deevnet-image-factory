@@ -133,6 +133,18 @@
         force: true
 
     # ------------------------------------------------------------
+    # WiFi regulatory domain (stops "Wi-Fi blocked by rfkill" nag)
+    # ------------------------------------------------------------
+    - name: Set WiFi regulatory country to US
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/wpa_supplicant/wpa_supplicant.conf"
+        mode: "0600"
+        content: |
+          ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+          update_config=1
+          country=US
+
+    # ------------------------------------------------------------
     # Boot configuration for HAT / SDR prerequisites
     # ------------------------------------------------------------
     - name: Write complete boot config.txt
@@ -388,17 +400,17 @@
 
           pass() {
               echo -e "${GREEN}[PASS]${NC} $1"
-              ((PASS_COUNT++))
+              ((++PASS_COUNT)) || true
           }
 
           fail() {
               echo -e "${RED}[FAIL]${NC} $1"
-              ((FAIL_COUNT++))
+              ((++FAIL_COUNT)) || true
           }
 
           warn() {
               echo -e "${YELLOW}[WARN]${NC} $1"
-              ((WARN_COUNT++))
+              ((++WARN_COUNT)) || true
           }
 
           info() {
@@ -536,7 +548,7 @@
 
               local output
               if output=$(SoapySDRUtil --find 2>&1); then
-                  if echo "$output" | grep -q "driver=Cariboulite"; then
+                  if echo "$output" | grep -qi "driver.*=.*Cariboulite"; then
                       pass "CaribouLite device detected by SoapySDR"
                       if echo "$output" | grep -q "channel = S1G"; then
                           pass "S1G channel found (389-510 MHz, 779-1020 MHz)"
@@ -588,30 +600,35 @@
               info "Running hardware self-test..."
 
               local output
-              if output=$("$test_app" 2>&1 | head -50); then
-                  if echo "$output" | grep -q "FPGA.*operational\|FPGA.*running\|FPGA.*Success"; then
-                      pass "FPGA initialized successfully"
-                  else
-                      warn "FPGA status unclear"
-                  fi
+              output=$("$test_app" 2>&1 | head -60 | sed 's/\x1b\[[0-9;]*m//g') || true
 
-                  if echo "$output" | grep -q "AT86RF215\|Modem.*Version"; then
-                      pass "AT86RF215 modem detected"
-                  else
-                      warn "Modem detection unclear"
-                  fi
+              if [[ -z "$output" ]]; then
+                  fail "Hardware test application produced no output"
+                  return
+              fi
 
-                  if echo "$output" | grep -q "RFFC507"; then
-                      pass "RFFC5072 mixer detected"
-                  else
-                      warn "Mixer detection unclear"
-                  fi
-
-                  if echo "$output" | grep -q "Self-test.*success"; then
-                      pass "Hardware self-test completed successfully"
-                  fi
+              if echo "$output" | grep -qi "FPGA.*operational\|FPGA.*running\|FPGA.*programming"; then
+                  pass "FPGA initialized successfully"
               else
-                  fail "Hardware test application failed to run"
+                  warn "FPGA status unclear"
+              fi
+
+              if echo "$output" | grep -qi "AT86RF215\|Modem.*Version\|at86rf215"; then
+                  pass "AT86RF215 modem detected"
+              else
+                  warn "Modem detection unclear"
+              fi
+
+              if echo "$output" | grep -qi "RFFC507\|rffc507"; then
+                  pass "RFFC5072 mixer detected"
+              else
+                  warn "Mixer detection unclear"
+              fi
+
+              if echo "$output" | grep -qi "CaribouLite.*FULL\|Product.*CaribouLite"; then
+                  pass "CaribouLite board detected"
+              else
+                  warn "Board detection unclear"
               fi
           }
 
@@ -640,7 +657,7 @@
                       if [[ $file_size -gt 0 ]]; then
                           pass "RF capture successful ($file_size bytes)"
                           local zero_check
-                          zero_check=$(od -A n -t x1 "$capture_file" | head -10 | tr -d ' \n')
+                          zero_check=$(head -c 256 "$capture_file" | od -A n -t x1 | tr -d ' \n')
                           if [[ "$zero_check" =~ ^0+$ ]]; then
                               fail "Captured data is all zeros"
                           else

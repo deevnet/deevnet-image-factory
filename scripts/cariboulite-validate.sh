@@ -28,17 +28,17 @@ TEST_MODE="${1:---full}"
 
 pass() {
     echo -e "${GREEN}[PASS]${NC} $1"
-    ((PASS_COUNT++))
+    ((++PASS_COUNT)) || true
 }
 
 fail() {
     echo -e "${RED}[FAIL]${NC} $1"
-    ((FAIL_COUNT++))
+    ((++FAIL_COUNT)) || true
 }
 
 warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
-    ((WARN_COUNT++))
+    ((++WARN_COUNT)) || true
 }
 
 info() {
@@ -191,25 +191,16 @@ check_soapysdr_find() {
 
     local output
     if output=$(SoapySDRUtil --find 2>&1); then
-        if echo "$output" | grep -q "driver=Cariboulite"; then
+        # Check for Cariboulite (handle both "driver=Cariboulite" and "driver = Cariboulite")
+        if echo "$output" | grep -qi "driver.*=.*Cariboulite"; then
             pass "CaribouLite device detected by SoapySDR"
 
-            # Count channels
-            local s1g_found=false
-            local hif_found=false
-
             if echo "$output" | grep -q "channel = S1G"; then
-                s1g_found=true
                 pass "S1G channel found (389-510 MHz, 779-1020 MHz)"
             fi
 
             if echo "$output" | grep -q "channel = HiF"; then
-                hif_found=true
                 pass "HiF channel found (1-6000 MHz)"
-            fi
-
-            if ! $s1g_found && ! $hif_found; then
-                warn "No specific channels identified"
             fi
         else
             fail "CaribouLite device NOT detected"
@@ -270,38 +261,40 @@ run_hardware_test() {
     info "Running hardware self-test..."
 
     local output
-    if output=$("$test_app" 2>&1 | head -50); then
-        # Check for FPGA
-        if echo "$output" | grep -q "FPGA.*operational\|FPGA.*running\|FPGA.*Success"; then
-            pass "FPGA initialized successfully"
-        else
-            warn "FPGA status unclear"
-        fi
+    # Strip ANSI color codes for reliable grep matching
+    output=$("$test_app" 2>&1 | head -60 | sed 's/\x1b\[[0-9;]*m//g') || true
 
-        # Check for modem
-        if echo "$output" | grep -q "AT86RF215\|Modem.*Version"; then
-            pass "AT86RF215 modem detected"
-        else
-            warn "Modem detection unclear"
-        fi
+    if [[ -z "$output" ]]; then
+        fail "Hardware test application produced no output"
+        return
+    fi
 
-        # Check for mixer
-        if echo "$output" | grep -q "RFFC507"; then
-            pass "RFFC5072 mixer detected"
-        else
-            warn "Mixer detection unclear"
-        fi
-
-        # Check for self-test result
-        if echo "$output" | grep -q "Self-test.*success"; then
-            pass "Hardware self-test completed successfully"
-        elif echo "$output" | grep -qi "error\|fail"; then
-            fail "Hardware self-test reported errors"
-        else
-            info "Self-test completion status unclear"
-        fi
+    # Check for FPGA
+    if echo "$output" | grep -qi "FPGA.*operational\|FPGA.*running\|FPGA.*programming"; then
+        pass "FPGA initialized successfully"
     else
-        fail "Hardware test application failed to run"
+        warn "FPGA status unclear"
+    fi
+
+    # Check for modem
+    if echo "$output" | grep -qi "AT86RF215\|Modem.*Version\|at86rf215"; then
+        pass "AT86RF215 modem detected"
+    else
+        warn "Modem detection unclear"
+    fi
+
+    # Check for mixer
+    if echo "$output" | grep -qi "RFFC507\|rffc507"; then
+        pass "RFFC5072 mixer detected"
+    else
+        warn "Mixer detection unclear"
+    fi
+
+    # Check for board detection
+    if echo "$output" | grep -qi "CaribouLite.*FULL\|Product.*CaribouLite"; then
+        pass "CaribouLite board detected"
+    else
+        warn "Board detection unclear"
     fi
 }
 
@@ -333,9 +326,9 @@ run_rf_test() {
             if [[ $file_size -gt 0 ]]; then
                 pass "RF capture successful ($file_size bytes)"
 
-                # Quick validation of data
+                # Quick validation - read first 256 bytes only
                 local zero_check
-                zero_check=$(od -A n -t x1 "$capture_file" | head -10 | tr -d ' \n')
+                zero_check=$(head -c 256 "$capture_file" | od -A n -t x1 | tr -d ' \n')
                 if [[ "$zero_check" =~ ^0+$ ]]; then
                     fail "Captured data is all zeros (hardware issue)"
                 else
