@@ -1,52 +1,8 @@
-# Proxmox Builds
+# Proxmox VE Bare Metal Installation
 
-This document covers two things:
-1. **VM Templates** - Guest OS images that run *on* Proxmox (Fedora)
-2. **Proxmox VE Installation** - Automated ISOs for installing *Proxmox itself* on bare metal
+Builds customized ISOs for installing **Proxmox VE** (the hypervisor) on bare metal hardware. These ISOs include embedded or HTTP-fetched answer files for fully automated, unattended installation.
 
-## Overview
-
-| Type | Purpose |
-|------|---------|
-| **VM Templates** | Fedora base images for cloning guest VMs |
-| **PVE Bare Metal ISOs** | Automated installation of Proxmox VE hypervisor |
-
-## VM Templates
-
-### Fedora 43 Template
-
-Builds a Fedora Server 43 template in Proxmox using kickstart.
-
-```bash
-# Set credentials
-export TF_VAR_proxmox_url="https://proxmox:8006/api2/json"
-export TF_VAR_proxmox_token_id="user@pam!token"
-export TF_VAR_proxmox_token_secret="secret"
-export TF_VAR_proxmox_node="pve"
-
-# Build template
-make proxmox-fedora
-```
-
-The template includes:
-- Automation user (`a_autoprov`) with SSH key and passwordless sudo
-- Minimal Fedora Server installation
-- Cloud-init ready
-
-### Required Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `TF_VAR_proxmox_url` | Proxmox API URL |
-| `TF_VAR_proxmox_token_id` | API token ID |
-| `TF_VAR_proxmox_token_secret` | API token secret |
-| `TF_VAR_proxmox_node` | Target Proxmox node |
-
-## Proxmox VE Bare Metal Installation
-
-Builds customized ISOs for installing **Proxmox VE itself** (the hypervisor) on bare metal hardware. These ISOs include embedded or HTTP-fetched answer files for fully automated, unattended installation.
-
-### Prerequisites
+## Prerequisites
 
 1. Build the container with Proxmox tooling (one-time):
    ```bash
@@ -58,7 +14,7 @@ Builds customized ISOs for installing **Proxmox VE itself** (the hypervisor) on 
    PW_HASH=$(openssl passwd -6 'yourpassword')
    ```
 
-### Build Targets
+## Build Targets
 
 | Target | Description |
 |--------|-------------|
@@ -67,7 +23,7 @@ Builds customized ISOs for installing **Proxmox VE itself** (the hypervisor) on 
 | `proxmox-pve-iso-http` | ISO for HTTP answer fetch (PXE-compatible) |
 | `proxmox-pve-pxe` | Extract kernel/initrd for PXE boot |
 
-### Examples
+## Examples
 
 **ZFS with DHCP (most common):**
 ```bash
@@ -89,7 +45,7 @@ make proxmox-pve-iso-http \
     PVE_ANSWER_URL=http://artifacts.example.com/answers/default.toml
 ```
 
-### Build Variables
+## Build Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -102,7 +58,7 @@ make proxmox-pve-iso-http \
 | `PVE_ROOT_PASSWORD_HASH` | (required) | Root password hash |
 | `PVE_ANSWER_URL` | (for http mode) | Answer file URL |
 
-### Output
+## Output
 
 ISOs are created in `packer/proxmox/pve-iso/output/`:
 - `proxmox-ve-8.4-1-autoprov-zfs.iso`
@@ -111,10 +67,9 @@ ISOs are created in `packer/proxmox/pve-iso/output/`:
 
 ## PXE Boot
 
-For network installation of Proxmox VE:
+For network installation:
 
 ```bash
-# Extract kernel/initrd
 make proxmox-pve-pxe
 ```
 
@@ -138,6 +93,4 @@ Upload these to your artifact server. The iPXE script boots via HTTP (required d
 
 ## Related Files
 
-- `packer/proxmox/fedora-base-image/fedora-43.pkr.hcl` - Fedora template definition
-- `packer/proxmox/fedora-base-image/http/kickstart.cfg` - Kickstart configuration
-- `packer/proxmox/pve-iso/` - PVE ISO builder scripts and templates
+- `packer/proxmox/pve-iso/` - ISO builder scripts and templates

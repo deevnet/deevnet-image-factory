@@ -2,7 +2,9 @@
 
 Packer configurations for Proxmox VM templates and bare metal Proxmox VE installer ISOs.
 
-See [docs/proxmox.md](../../docs/proxmox.md) for full documentation.
+Documentation:
+- [VM Template](../../docs/proxmox-vm-template.md) - Fedora template build
+- [PVE Install](../../docs/proxmox-pve-install.md) - Bare metal hypervisor installation
 
 ## Directory Structure
 
