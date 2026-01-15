@@ -56,6 +56,17 @@
         - "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants"
         - "{{ chroot_root }}/boot"
 
+    - name: Check for Bookworm boot config location
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/boot/firmware/config.txt"
+      register: boot_firmware_config
+
+    - name: Set boot config path based on OS version
+      ansible.builtin.set_fact:
+        boot_config_txt: >-
+          {{ boot_firmware_config.stat.exists
+             | ternary(chroot_root ~ '/boot/firmware/config.txt', chroot_root ~ '/boot/config.txt') }}
+
   tasks:
     - name: Verify Ansible is running and show host + image paths
       ansible.builtin.debug:
@@ -108,6 +119,40 @@
         dest: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/ssh.service"
         state: link
         force: true
+
+    # ------------------------------------------------------------
+    # Boot configuration
+    # ------------------------------------------------------------
+    - name: Write complete boot config.txt
+      ansible.builtin.copy:
+        dest: "{{ boot_config_txt }}"
+        mode: "0644"
+        content: |
+          # ============================================================
+          # MANAGED BY ANSIBLE - DO NOT EDIT MANUALLY
+          # Changes will be overwritten on next image build
+          # Build Date: {{ ansible_date_time.iso8601 }}
+          # Playbook: pi-pidp11-config.yml
+          # ============================================================
+
+          # For more options and information see
+          # http://rptl.io/configtxt
+
+          dtparam=audio=on
+          camera_auto_detect=0
+          display_auto_detect=1
+          auto_initramfs=1
+          dtoverlay=vc4-fkms-v3d
+          max_framebuffers=2
+
+          arm_64bit=1
+          disable_overscan=1
+          arm_boost=1
+
+          # Standard GPIO for PiDP-11 front panel
+          dtparam=spi=on
+          dtparam=i2c_arm=on
+          enable_uart=1
 
     # ------------------------------------------------------------
     # SimH Installation (chroot package installation)

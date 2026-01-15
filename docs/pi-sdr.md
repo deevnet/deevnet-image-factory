@@ -151,7 +151,17 @@ dtoverlay=spi1-3cs
 
 ### Kernel module fails to compile
 
-The image includes a patch for the `class_create()` kernel API change in Linux 6.4+. If compilation still fails, check kernel headers are installed:
+The image includes patches for kernel API changes in Linux 6.x:
+
+| Kernel Version | API Change | Patch Applied |
+|---------------|------------|---------------|
+| 6.4+ | `class_create()` signature changed | `THIS_MODULE` parameter removed |
+| 6.12+ | `vmalloc()`/`vfree()` moved | `#include <linux/vmalloc.h>` added |
+| 6.3+ | `.remove` callback returns `void` | Function signature updated |
+
+These patches are protected from `install.sh`'s `git pull` using `git update-index --skip-worktree`.
+
+If compilation still fails, check kernel headers are installed:
 
 ```bash
 sudo apt-get install raspberrypi-kernel-headers
