@@ -45,9 +45,8 @@ make proxmox-fedora
 
 - [Pi SDR Image](docs/pi-sdr.md) - CaribouLite SDR build and usage
 - [Pi PiDP-11 Image](docs/pi-pidp11.md) - PDP-11 emulator build
-- [Proxmox Builds](docs/proxmox.md) - VM templates and bare metal ISOs
-- [Artifact Layout](docs/artifact-layout.md) - Output naming conventions
-- [Design Notes](docs/design-notes.md) - Architectural decisions
+- [Proxmox VM Template](docs/proxmox-vm-template.md) - Fedora VM template
+- [Proxmox VE Install](docs/proxmox-pve-install.md) - Bare metal hypervisor installation
 
 ## Output
 
