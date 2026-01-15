@@ -194,6 +194,73 @@
         state: directory
         mode: "0755"
 
+    # ------------------------------------------------------------
+    # CaribouLite Build Dependencies (chroot package installation)
+    # ------------------------------------------------------------
+    - name: Verify apt is present in chroot
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/usr/bin/apt-get"
+      register: aptget_stat
+
+    - name: Update apt cache inside chroot
+      when: aptget_stat.stat.exists
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get update"
+      changed_when: true
+
+    - name: Install CaribouLite build dependencies
+      when: aptget_stat.stat.exists
+      ansible.builtin.command:
+        cmd: >
+          chroot {{ chroot_root }} /usr/bin/apt-get install -y
+          git
+          curl
+          ca-certificates
+          build-essential
+          cmake
+          libsoapysdr-dev
+          soapysdr-tools
+          soapysdr-module-all
+          soapyremote-server
+          raspberrypi-kernel-headers
+          dkms
+      changed_when: true
+
+    - name: Install Python packages for spectrum analysis
+      when: aptget_stat.stat.exists
+      ansible.builtin.command:
+        cmd: >
+          chroot {{ chroot_root }} /usr/bin/apt-get install -y
+          python3-numpy
+          python3-matplotlib
+          python3-scipy
+          python3-soapysdr
+      changed_when: true
+
+    # ------------------------------------------------------------
+    # Create pisdr user for CaribouLite installation
+    # (install.sh refuses to run as root)
+    # ------------------------------------------------------------
+    - name: Create pisdr user in chroot
+      ansible.builtin.command:
+        cmd: >
+          chroot {{ chroot_root }} useradd -m -s /bin/bash
+          -G sudo,audio,video,adm,dialout,plugdev,gpio,i2c,spi
+          pisdr
+        creates: "{{ chroot_root }}/home/pisdr"
+
+    - name: Set pisdr user password
+      ansible.builtin.shell:
+        cmd: |
+          chroot {{ chroot_root }} bash -c 'echo "pisdr:pisdr" | chpasswd'
+      changed_when: true
+
+    - name: Grant pisdr passwordless sudo
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/sudoers.d/010_pisdr-nopasswd"
+        content: 'pisdr ALL=(ALL) NOPASSWD:ALL'
+        mode: "0440"
+
     - name: Create README for SDR baked image
       ansible.builtin.copy:
         dest: "{{ chroot_root }}/home/pisdr/README-sdr.txt"
@@ -331,73 +398,6 @@
             - Test locally first: SoapySDRUtil --find
 
           Build Date: {{ ansible_date_time.iso8601 }}
-
-    # ------------------------------------------------------------
-    # CaribouLite Build Dependencies (chroot package installation)
-    # ------------------------------------------------------------
-    - name: Verify apt is present in chroot
-      ansible.builtin.stat:
-        path: "{{ chroot_root }}/usr/bin/apt-get"
-      register: aptget_stat
-
-    - name: Update apt cache inside chroot
-      when: aptget_stat.stat.exists
-      ansible.builtin.command:
-        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get update"
-      changed_when: true
-
-    - name: Install CaribouLite build dependencies
-      when: aptget_stat.stat.exists
-      ansible.builtin.command:
-        cmd: >
-          chroot {{ chroot_root }} /usr/bin/apt-get install -y
-          git
-          curl
-          ca-certificates
-          build-essential
-          cmake
-          libsoapysdr-dev
-          soapysdr-tools
-          soapysdr-module-all
-          soapyremote-server
-          raspberrypi-kernel-headers
-          dkms
-      changed_when: true
-
-    - name: Install Python packages for spectrum analysis
-      when: aptget_stat.stat.exists
-      ansible.builtin.command:
-        cmd: >
-          chroot {{ chroot_root }} /usr/bin/apt-get install -y
-          python3-numpy
-          python3-matplotlib
-          python3-scipy
-          python3-soapysdr
-      changed_when: true
-
-    # ------------------------------------------------------------
-    # Create pisdr user for CaribouLite installation
-    # (install.sh refuses to run as root)
-    # ------------------------------------------------------------
-    - name: Create pisdr user in chroot
-      ansible.builtin.command:
-        cmd: >
-          chroot {{ chroot_root }} useradd -m -s /bin/bash
-          -G sudo,audio,video,adm,dialout,plugdev,gpio,i2c,spi
-          pisdr
-        creates: "{{ chroot_root }}/home/pisdr"
-
-    - name: Set pisdr user password
-      ansible.builtin.shell:
-        cmd: |
-          chroot {{ chroot_root }} bash -c 'echo "pisdr:pisdr" | chpasswd'
-      changed_when: true
-
-    - name: Grant pisdr passwordless sudo
-      ansible.builtin.copy:
-        dest: "{{ chroot_root }}/etc/sudoers.d/010_pisdr-nopasswd"
-        content: 'pisdr ALL=(ALL) NOPASSWD:ALL'
-        mode: "0440"
 
     # ------------------------------------------------------------
     # CaribouLite Clone and Patching
