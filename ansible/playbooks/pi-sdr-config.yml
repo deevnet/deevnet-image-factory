@@ -152,6 +152,13 @@
         dest: "{{ boot_config_txt }}"
         mode: "0644"
         content: |
+          # ============================================================
+          # MANAGED BY ANSIBLE - DO NOT EDIT MANUALLY
+          # Changes will be overwritten on next image build
+          # Build Date: {{ ansible_date_time.iso8601 }}
+          # Playbook: pi-sdr-config.yml
+          # ============================================================
+
           # For more options and information see
           # http://rptl.io/configtxt
           # Some settings may impact device functionality. See link above for details
@@ -209,16 +216,18 @@
               sudo systemctl enable --now SoapySDRServer
 
           Pre-installed:
-            - CaribouLite source code (cloned and patched)
+            - CaribouLite source code (cloned and patched for kernel 6.12+)
+            - Kernel compatibility patches protected from git pull (skip-worktree)
             - Build dependencies (cmake, dkms, kernel headers, etc.)
             - SoapySDR tools and modules
             - SoapySDRServer service file (not enabled at boot)
 
           Boot Configuration (/boot/firmware/config.txt):
-            - SPI enabled (dtparam=spi=on)
-            - I2C enabled (dtparam=i2c_arm=on)
+            - Standard SPI disabled (CaribouLite uses SPI1-3CS instead)
+            - Standard I2C disabled (CaribouLite uses VC I2C instead)
+            - dtparam=i2c_vc=on (required for EEPROM)
+            - dtoverlay=spi1-3cs (required for modem/FPGA)
             - UART enabled (enable_uart=1)
-            - i2c_vc and spi1-3cs are COMMENTED OUT (enable if needed for CaribouLite)
 
           Post-Install Verification:
             - Probe SDR: SoapySDRUtil --probe
@@ -313,6 +322,29 @@
         regexp: 'class_create\(THIS_MODULE,\s*DEVICE_NAME\)'
         replace: 'class_create(DEVICE_NAME)'
         backup: true
+
+    - name: Add missing vmalloc.h include for kernel 6.12+
+      ansible.builtin.lineinfile:
+        path: "{{ chroot_root }}/opt/cariboulite/driver/smi_stream_dev.c"
+        insertafter: '#include <linux/init.h>'
+        line: '#include <linux/vmalloc.h>'
+
+    - name: Fix smi_stream_dev_remove return type for kernel 6.3+
+      ansible.builtin.replace:
+        path: "{{ chroot_root }}/opt/cariboulite/driver/smi_stream_dev.c"
+        regexp: 'static int smi_stream_dev_remove\(struct platform_device \*pdev\)'
+        replace: 'static void smi_stream_dev_remove(struct platform_device *pdev)'
+
+    - name: Remove return statement from smi_stream_dev_remove for kernel 6.3+
+      ansible.builtin.replace:
+        path: "{{ chroot_root }}/opt/cariboulite/driver/smi_stream_dev.c"
+        regexp: '(dev_info\(inst->dev, DRIVER_NAME": smi-stream dev removed"\);)\n\s*return 0;'
+        replace: '\1'
+
+    - name: Protect patched driver from git pull overwrites
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} git -C /opt/cariboulite update-index --skip-worktree driver/smi_stream_dev.c"
+      changed_when: true
 
     - name: Set ownership of CaribouLite directory for pisdr
       ansible.builtin.command:
