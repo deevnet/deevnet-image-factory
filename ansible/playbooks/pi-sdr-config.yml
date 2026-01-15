@@ -196,52 +196,139 @@
 
     - name: Create README for SDR baked image
       ansible.builtin.copy:
-        dest: "{{ chroot_root }}/opt/deevnet/README-sdr.txt"
+        dest: "{{ chroot_root }}/home/pisdr/README-sdr.txt"
         mode: "0644"
+        owner: "1002"
+        group: "1002"
         content: |
           Pi SDR Image (Bookworm) - CaribouLite Edition
           =====================================================================================
           This image is prepared for CaribouLite SDR HAT support.
           Reference: https://www.jeffgeerling.com/blog/2025/cariboulite-sdr-hat-sdr-on-raspberry-pi
 
-          FIRST BOOT SETUP REQUIRED:
-            CaribouLite source is cloned to /opt/cariboulite but NOT installed.
-            You must run the installer manually with the hardware attached:
+          FIRST BOOT SETUP
+          ----------------
+          CaribouLite source is cloned to /opt/cariboulite but NOT installed.
+          Run the installer with the hardware attached:
 
-              cd /opt/cariboulite
-              ./install.sh
+            cd /opt/cariboulite
+            ./install.sh
 
-            After installation, enable the SoapySDR server if needed:
+          After install.sh completes, REBOOT to load the kernel module:
 
-              sudo systemctl enable --now SoapySDRServer
+            sudo reboot
 
-          Pre-installed:
-            - CaribouLite source code (cloned and patched for kernel 6.12+)
-            - Kernel compatibility patches protected from git pull (skip-worktree)
-            - Build dependencies (cmake, dkms, kernel headers, etc.)
-            - SoapySDR tools and modules
-            - SoapySDRServer service file (not enabled at boot)
+          SoapySDRServer will start automatically and find the CaribouLite device.
 
-          Boot Configuration (/boot/firmware/config.txt):
-            - Standard SPI disabled (CaribouLite uses SPI1-3CS instead)
-            - Standard I2C disabled (CaribouLite uses VC I2C instead)
-            - dtparam=i2c_vc=on (required for EEPROM)
-            - dtoverlay=spi1-3cs (required for modem/FPGA)
-            - UART enabled (enable_uart=1)
+          VERIFICATION
+          ------------
+          Run the validation script to check everything is working:
 
-          Post-Install Verification:
-            - Probe SDR: SoapySDRUtil --probe
-            - Check service: systemctl status SoapySDRServer
-            - Check kernel modules: lsmod | grep smi
+            ./cariboulite-validate.sh --full
 
-          Expected kernel modules (after install.sh):
-            - smi_stream_dev
-            - bcm2835_smi
+          Or check individual components:
 
-          Network SDR Access:
-            The SoapySDRServer runs on port 55132 by default.
-            From a remote machine with SoapySDR installed:
-              SoapySDRUtil --find="driver=remote,remote=<pi-ip>"
+            ./cariboulite-validate.sh --os        # Kernel modules, boot config
+            ./cariboulite-validate.sh --soapy     # SoapySDR device detection
+            ./cariboulite-validate.sh --server    # SoapySDRServer status
+            ./cariboulite-validate.sh --spectrum -f 96.3  # Spectrum plot at 96.3 MHz
+
+          Manual verification commands:
+
+            SoapySDRUtil --find                   # List all SoapySDR devices
+            SoapySDRUtil --probe="driver=Cariboulite"  # Detailed device info
+            systemctl status SoapySDRServer       # Check server status
+            lsmod | grep smi                      # Check kernel modules
+
+          CLIENT CONFIGURATION (Remote SDR Access)
+          ----------------------------------------
+          SoapySDRServer runs on port 55132 and allows remote SDR clients to
+          connect over the network. Any SoapySDR-compatible application can use
+          the CaribouLite remotely.
+
+          1. Install SoapySDR + SoapyRemote on the client machine:
+
+             # Debian/Ubuntu:
+             sudo apt install soapysdr-tools soapyremote-client
+
+             # Fedora:
+             sudo dnf install SoapySDR soapy-remote
+
+             # macOS (Homebrew):
+             brew install soapysdr soapyremote
+
+          2. Discover the remote SDR:
+
+             SoapySDRUtil --find="driver=remote,remote=<pi-ip>"
+
+             Example output:
+               driver = remote
+               label = CaribouLite (Full) - XXXXXXXX [remote]
+               remote = 192.168.1.100
+               remote:driver = Cariboulite
+
+          3. Use with SDR applications:
+
+             # CubicSDR - use device string:
+             driver=remote,remote=<pi-ip>
+
+             # Gqrx - use device string:
+             soapy=0,driver=remote,remote=<pi-ip>
+
+             # GNU Radio (gr-soapy) - use device arguments:
+             driver=remote,remote=<pi-ip>
+
+             # SDR++ - select "SoapySDR" source, enter remote device string
+
+          4. SSH tunnel (optional, for firewalled networks):
+
+             ssh -L 55132:<pi-ip>:55132 user@jumphost
+             SoapySDRUtil --find="driver=remote,remote=127.0.0.1,remote:prot=tcp"
+
+          CARIBOULITE CHANNELS
+          --------------------
+          The CaribouLite has two RF channels:
+
+            S1G (Sub-1GHz):  389-510 MHz and 779-1020 MHz
+            HiF (High Freq): 30 MHz - 6 GHz (wider range, lower sensitivity)
+
+          Select channel in SoapySDR applications or via device string:
+            driver=remote,remote=<pi-ip>,channel=S1G
+            driver=remote,remote=<pi-ip>,channel=HiF
+
+          PRE-INSTALLED SOFTWARE
+          ----------------------
+          - CaribouLite source (/opt/cariboulite) - patched for kernel 6.12+
+          - SoapySDR tools and modules
+          - SoapySDRServer (enabled at boot, 0.0.0.0:55132)
+          - Python spectrum tools: numpy, matplotlib, scipy, soapysdr
+          - Validation script: ~/cariboulite-validate.sh
+          - Spectrum analyzer: /opt/deevnet/cariboulite-spectrum.py
+
+          BOOT CONFIGURATION
+          ------------------
+          /boot/firmware/config.txt is configured for CaribouLite:
+          - dtparam=i2c_vc=on     (VC I2C for HAT EEPROM)
+          - dtoverlay=spi1-3cs    (SPI1 for modem/FPGA)
+          - enable_uart=1         (UART for debug)
+          - Standard SPI/I2C disabled (conflicts with CaribouLite)
+
+          TROUBLESHOOTING
+          ---------------
+          No device found:
+            - Ensure install.sh completed successfully
+            - Reboot after install.sh
+            - Check: lsmod | grep smi (should show smi_stream_dev, bcm2835_smi)
+
+          SoapySDRServer not running:
+            - Check: systemctl status SoapySDRServer
+            - Start: sudo systemctl start SoapySDRServer
+            - Logs: journalctl -u SoapySDRServer -f
+
+          Remote client can't connect:
+            - Verify Pi IP: hostname -I
+            - Check firewall: sudo iptables -L (port 55132 must be open)
+            - Test locally first: SoapySDRUtil --find
 
           Build Date: {{ ansible_date_time.iso8601 }}
 
@@ -272,6 +359,7 @@
           libsoapysdr-dev
           soapysdr-tools
           soapysdr-module-all
+          soapyremote-server
           raspberrypi-kernel-headers
           dkms
       changed_when: true
@@ -400,8 +488,17 @@
           [Install]
           WantedBy=multi-user.target
 
-    # NOTE: SoapySDRServer is installed but NOT enabled at boot.
-    # To enable manually: sudo systemctl enable --now SoapySDRServer
+    - name: Enable SoapySDRServer at boot
+      ansible.builtin.file:
+        src: >-
+          {{ (soapy_service_lib.stat.exists | default(false))
+              | ternary('/lib/systemd/system/SoapySDRServer.service',
+                        (soapy_service_usr.stat.exists | default(false))
+                        | ternary('/usr/lib/systemd/system/SoapySDRServer.service',
+                                  '/etc/systemd/system/SoapySDRServer.service')) }}
+        dest: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/SoapySDRServer.service"
+        state: link
+        force: true
 
     # ------------------------------------------------------------
     # Validation and Test Scripts (for post-install verification)
