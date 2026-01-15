@@ -3,11 +3,21 @@
 # CaribouLite SDR Validation Script
 # Validates OS configuration and tests SDR hardware functionality
 #
-# Usage: cariboulite-validate.sh <--quick|--full|--rf-test|--spectrum> [-f <freq>]
-#   --quick    : OS checks only (kernel modules, boot config, device nodes)
-#   --full     : OS checks + SoapySDR detection + hardware self-test
-#   --rf-test  : Full test + basic RF capture verification
-#   --spectrum : Full test + spectrum analysis with plot generation
+# Usage: cariboulite-validate.sh [OPTIONS]
+#
+# Test options (can combine multiple):
+#   --os       : OS checks (kernel modules, boot config, device nodes)
+#   --soapy    : SoapySDR device detection and probe
+#   --hardware : Hardware self-test (FPGA, modem, mixer)
+#   --server   : SoapySDRServer status and connectivity
+#   --rf       : Basic RF capture verification
+#   --spectrum : Spectrum analysis with plot generation
+#
+# Shortcuts:
+#   --quick    : Same as --os
+#   --full     : Run all tests
+#
+# Options:
 #   -f <MHz>   : Center frequency for spectrum test (default: 100)
 #
 
@@ -25,8 +35,13 @@ PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
 
-# Test mode and options
-TEST_MODE=""
+# Test flags (each option sets its flag independently)
+RUN_OS=false
+RUN_SOAPY=false
+RUN_HARDWARE=false
+RUN_SERVER=false
+RUN_RF=false
+RUN_SPECTRUM=false
 FREQ=100
 
 pass() {
@@ -250,6 +265,76 @@ check_soapysdr_probe() {
         fi
     else
         fail "SoapySDR probe failed"
+    fi
+}
+
+# ============================================================
+# SoapySDRServer Tests
+# ============================================================
+
+check_soapysdr_server() {
+    header "SoapySDRServer Status"
+
+    # Check if SoapySDRServer binary exists
+    if ! command -v SoapySDRServer &>/dev/null; then
+        fail "SoapySDRServer not found in PATH"
+        info "Install with: sudo apt install soapyremote-server"
+        return
+    fi
+
+    pass "SoapySDRServer binary found"
+
+    # Check systemd service status
+    if systemctl is-enabled SoapySDRServer &>/dev/null; then
+        pass "SoapySDRServer service is enabled"
+    else
+        warn "SoapySDRServer service is NOT enabled"
+        info "Enable with: sudo systemctl enable SoapySDRServer"
+    fi
+
+    if systemctl is-active SoapySDRServer &>/dev/null; then
+        pass "SoapySDRServer service is running"
+
+        # Get listening port
+        local listen_info
+        listen_info=$(ss -tlnp 2>/dev/null | grep -E "SoapySDR|:55132" || echo "")
+        if [[ -n "$listen_info" ]]; then
+            pass "SoapySDRServer listening on port 55132"
+        else
+            warn "Could not verify listening port (may need root to check)"
+        fi
+    else
+        fail "SoapySDRServer service is NOT running"
+        info "Start with: sudo systemctl start SoapySDRServer"
+
+        # Show recent logs if available
+        local logs
+        logs=$(journalctl -u SoapySDRServer -n 5 --no-pager 2>/dev/null || echo "")
+        if [[ -n "$logs" ]]; then
+            info "Recent logs:"
+            echo "$logs" | head -5
+        fi
+    fi
+
+    # Check if server can be reached locally
+    if command -v SoapySDRUtil &>/dev/null; then
+        local remote_check
+        if remote_check=$(timeout 5 SoapySDRUtil --find="driver=remote,remote=127.0.0.1" 2>&1); then
+            if echo "$remote_check" | grep -qi "remote"; then
+                pass "SoapySDRServer responding to local queries"
+
+                # Check if it sees the CaribouLite
+                if echo "$remote_check" | grep -qi "Cariboulite"; then
+                    pass "CaribouLite visible via remote server"
+                else
+                    warn "CaribouLite not visible via remote (run install.sh first?)"
+                fi
+            else
+                warn "Remote query returned but no remote driver found"
+            fi
+        else
+            warn "Could not query local SoapySDRServer"
+        fi
     fi
 }
 
@@ -481,31 +566,52 @@ main() {
     echo -e "${CYAN}CaribouLite SDR Validation${NC}"
     echo -e "${CYAN}==========================${NC}"
     echo ""
-    info "Test mode: $TEST_MODE"
+
+    # Build test list for display
+    local tests=()
+    $RUN_OS && tests+=("os")
+    $RUN_SOAPY && tests+=("soapy")
+    $RUN_HARDWARE && tests+=("hardware")
+    $RUN_SERVER && tests+=("server")
+    $RUN_RF && tests+=("rf")
+    $RUN_SPECTRUM && tests+=("spectrum")
+
+    info "Tests: ${tests[*]}"
     info "Hostname: $(hostname)"
     info "Kernel: $(uname -r)"
     info "Date: $(date)"
 
-    # Always run OS checks
-    check_kernel_modules
-    check_boot_config
-    check_device_nodes
-    check_modprobe_config
+    # OS checks (kernel modules, boot config, device nodes, modprobe)
+    if $RUN_OS; then
+        check_kernel_modules
+        check_boot_config
+        check_device_nodes
+        check_modprobe_config
+    fi
 
-    # Full mode adds SoapySDR and hardware tests
-    if [[ "$TEST_MODE" == "--full" ]] || [[ "$TEST_MODE" == "--rf-test" ]] || [[ "$TEST_MODE" == "--spectrum" ]]; then
+    # SoapySDR detection tests
+    if $RUN_SOAPY; then
         check_soapysdr_find
         check_soapysdr_probe
+    fi
+
+    # Hardware self-test
+    if $RUN_HARDWARE; then
         run_hardware_test
     fi
 
-    # RF test mode adds basic capture test
-    if [[ "$TEST_MODE" == "--rf-test" ]]; then
+    # SoapySDRServer status
+    if $RUN_SERVER; then
+        check_soapysdr_server
+    fi
+
+    # RF capture test
+    if $RUN_RF; then
         run_rf_test
     fi
 
-    # Spectrum test mode adds Python-based spectrum analysis
-    if [[ "$TEST_MODE" == "--spectrum" ]]; then
+    # Spectrum analysis (generates plots)
+    if $RUN_SPECTRUM; then
         run_spectrum_test
     fi
 
@@ -516,19 +622,30 @@ main() {
 show_help() {
     echo "CaribouLite SDR Validation Script"
     echo ""
-    echo "Usage: $0 <--quick|--full|--rf-test|--spectrum> [-f <freq>]"
+    echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Test modes:"
-    echo "  --quick    OS checks only (kernel modules, boot config, devices)"
-    echo "  --full     OS checks + SoapySDR + hardware self-test"
-    echo "  --rf-test  Full test + basic RF capture verification"
-    echo "  --spectrum Full test + spectrum analysis with plot generation"
-    echo "             (requires python3-numpy, python3-matplotlib, python3-scipy,"
-    echo "              python3-soapysdr)"
+    echo "Test options (can combine multiple):"
+    echo "  --os       OS checks (kernel modules, boot config, device nodes)"
+    echo "  --soapy    SoapySDR device detection and probe"
+    echo "  --hardware Hardware self-test (FPGA, modem, mixer)"
+    echo "  --server   SoapySDRServer status and connectivity"
+    echo "  --rf       Basic RF capture verification"
+    echo "  --spectrum Spectrum analysis with plot generation"
     echo ""
-    echo "Options:"
+    echo "Shortcut options:"
+    echo "  --quick    Same as --os"
+    echo "  --full     Run all tests (os, soapy, hardware, server, rf, spectrum)"
+    echo ""
+    echo "Other options:"
     echo "  -f, --freq <MHz>  Center frequency for spectrum test (default: 100)"
     echo "                    Example: -f 96.3 for FM station at 96.3 MHz"
+    echo ""
+    echo "Examples:"
+    echo "  $0 --quick                   # OS checks only"
+    echo "  $0 --server                  # Check SoapySDRServer only"
+    echo "  $0 --os --soapy              # OS checks + SoapySDR detection"
+    echo "  $0 --spectrum -f 96.3        # Spectrum analysis at 96.3 MHz"
+    echo "  $0 --full                    # Run all tests"
     echo ""
     echo "Exit codes:"
     echo "  0 - All critical tests passed"
@@ -539,8 +656,41 @@ show_help() {
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --quick|--full|--rf-test|--spectrum)
-            TEST_MODE="$1"
+        --os)
+            RUN_OS=true
+            shift
+            ;;
+        --soapy)
+            RUN_SOAPY=true
+            shift
+            ;;
+        --hardware)
+            RUN_HARDWARE=true
+            shift
+            ;;
+        --server)
+            RUN_SERVER=true
+            shift
+            ;;
+        --rf)
+            RUN_RF=true
+            shift
+            ;;
+        --spectrum)
+            RUN_SPECTRUM=true
+            shift
+            ;;
+        --quick)
+            RUN_OS=true
+            shift
+            ;;
+        --full)
+            RUN_OS=true
+            RUN_SOAPY=true
+            RUN_HARDWARE=true
+            RUN_SERVER=true
+            RUN_RF=true
+            RUN_SPECTRUM=true
             shift
             ;;
         -f|--freq)
@@ -558,8 +708,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Show help if no test mode specified
-if [[ -z "$TEST_MODE" ]]; then
+# Show help if no tests specified
+if ! $RUN_OS && ! $RUN_SOAPY && ! $RUN_HARDWARE && ! $RUN_SERVER && ! $RUN_RF && ! $RUN_SPECTRUM; then
     show_help
 fi
 

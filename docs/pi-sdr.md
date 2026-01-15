@@ -180,4 +180,4 @@ sudo apt-get install raspberrypi-kernel-headers
 - `scripts/cariboulite-validate.sh` - Source for the validation script
 - `/opt/cariboulite/` - CaribouLite source on the built image
 - `/home/pisdr/cariboulite-validate.sh` - Validation script (on built image)
-- `/opt/deevnet/README-sdr.txt` - Baked-in reference documentation
+- `/home/pisdr/README-sdr.txt` - Baked-in reference documentation
