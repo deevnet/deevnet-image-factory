@@ -3,10 +3,11 @@
 # CaribouLite SDR Validation Script
 # Validates OS configuration and tests SDR hardware functionality
 #
-# Usage: cariboulite-validate.sh [--quick|--full|--rf-test]
-#   --quick   : OS checks only (kernel modules, boot config, device nodes)
-#   --full    : OS checks + SoapySDR detection + hardware self-test (default)
-#   --rf-test : Full test + RF capture and analysis (requires numpy/scipy)
+# Usage: cariboulite-validate.sh <--quick|--full|--rf-test|--spectrum>
+#   --quick    : OS checks only (kernel modules, boot config, device nodes)
+#   --full     : OS checks + SoapySDR detection + hardware self-test
+#   --rf-test  : Full test + basic RF capture verification
+#   --spectrum : Full test + spectrum analysis with plot generation
 #
 
 set -euo pipefail
@@ -148,11 +149,17 @@ check_device_nodes() {
         warn "SPI1 devices not found"
     fi
 
-    # Check I2C
-    if [[ -c /dev/i2c-10 ]] || [[ -c /dev/i2c-0 ]]; then
-        pass "I2C device present"
+    # Check HAT EEPROM detection (validates i2c_vc worked at boot)
+    if [[ -f /proc/device-tree/hat/product ]]; then
+        local hat_product
+        hat_product=$(tr -d '\0' < /proc/device-tree/hat/product)
+        if [[ "$hat_product" == *"CaribouLite"* ]]; then
+            pass "HAT EEPROM detected: $hat_product"
+        else
+            warn "HAT detected but not CaribouLite: $hat_product"
+        fi
     else
-        warn "I2C device not found (may be OK if using different bus)"
+        warn "HAT EEPROM not detected (i2c_vc may not be working)"
     fi
 }
 
@@ -348,6 +355,95 @@ run_rf_test() {
 }
 
 # ============================================================
+# Spectrum Analysis Test (Python-based)
+# ============================================================
+
+run_spectrum_test() {
+    header "Spectrum Analysis Test"
+
+    local script_dir
+    script_dir="$(dirname "$(readlink -f "$0")")"
+    local spectrum_script="$script_dir/cariboulite-spectrum.py"
+    local output_image="/tmp/cariboulite_spectrum.png"
+
+    # Check for spectrum script in various locations
+    if [[ ! -f "$spectrum_script" ]]; then
+        spectrum_script="/opt/deevnet/cariboulite-spectrum.py"
+    fi
+    if [[ ! -f "$spectrum_script" ]]; then
+        spectrum_script="/home/pisdr/cariboulite-spectrum.py"
+    fi
+    if [[ ! -f "$spectrum_script" ]]; then
+        fail "cariboulite-spectrum.py not found"
+        info "Expected locations: $script_dir, /opt/deevnet, or /home/pisdr"
+        return
+    fi
+
+    # Check Python dependencies
+    local missing_deps=()
+    if ! python3 -c "import numpy" 2>/dev/null; then
+        missing_deps+=("python3-numpy")
+    fi
+    if ! python3 -c "import matplotlib" 2>/dev/null; then
+        missing_deps+=("python3-matplotlib")
+    fi
+    if ! python3 -c "import SoapySDR" 2>/dev/null; then
+        missing_deps+=("python3-soapysdr")
+    fi
+    if ! python3 -c "import scipy" 2>/dev/null; then
+        missing_deps+=("python3-scipy")
+    fi
+
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        fail "Missing Python dependencies: ${missing_deps[*]}"
+        info "Install with: sudo apt install ${missing_deps[*]}"
+        return
+    fi
+
+    info "Running spectrum analysis (this may take a moment)..."
+    info "Output image: $output_image"
+
+    local output
+    if output=$(python3 "$spectrum_script" -f 100 -b 2 -g 50 -o "$output_image" 2>&1); then
+        pass "Spectrum capture completed"
+
+        if [[ -f "$output_image" ]]; then
+            local img_size
+            img_size=$(stat -c%s "$output_image")
+            pass "Spectrum image generated ($img_size bytes)"
+            info "View with: display $output_image  (or copy to local machine)"
+
+            # Extract statistics from output
+            local peak noise dr
+            peak=$(echo "$output" | grep -oP "Peak power: \K[\d.-]+" || echo "")
+            noise=$(echo "$output" | grep -oP "Noise floor: \K[\d.-]+" || echo "")
+            dr=$(echo "$output" | grep -oP "Dynamic range: \K[\d.-]+" || echo "")
+
+            if [[ -n "$peak" ]] && [[ -n "$noise" ]]; then
+                info "Peak power: ${peak} dB, Noise floor: ${noise} dB"
+                if [[ -n "$dr" ]]; then
+                    # Check for reasonable dynamic range (> 20 dB suggests working hardware)
+                    local dr_int=${dr%.*}
+                    if [[ $dr_int -gt 20 ]]; then
+                        pass "Dynamic range: ${dr} dB (healthy signal)"
+                    elif [[ $dr_int -gt 10 ]]; then
+                        warn "Dynamic range: ${dr} dB (marginal - check antenna)"
+                    else
+                        warn "Dynamic range: ${dr} dB (low - possible hardware issue)"
+                    fi
+                fi
+            fi
+        else
+            fail "Spectrum image was not created"
+        fi
+    else
+        fail "Spectrum analysis failed"
+        # Show last few lines of error output
+        echo "$output" | tail -5
+    fi
+}
+
+# ============================================================
 # Summary
 # ============================================================
 
@@ -395,30 +491,38 @@ main() {
     check_modprobe_config
 
     # Full mode adds SoapySDR and hardware tests
-    if [[ "$TEST_MODE" == "--full" ]] || [[ "$TEST_MODE" == "--rf-test" ]]; then
+    if [[ "$TEST_MODE" == "--full" ]] || [[ "$TEST_MODE" == "--rf-test" ]] || [[ "$TEST_MODE" == "--spectrum" ]]; then
         check_soapysdr_find
         check_soapysdr_probe
         run_hardware_test
     fi
 
-    # RF test mode adds capture test
+    # RF test mode adds basic capture test
     if [[ "$TEST_MODE" == "--rf-test" ]]; then
         run_rf_test
+    fi
+
+    # Spectrum test mode adds Python-based spectrum analysis
+    if [[ "$TEST_MODE" == "--spectrum" ]]; then
+        run_spectrum_test
     fi
 
     print_summary
 }
 
-# Show help
-if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+# Show help if no arguments or -h/--help
+if [[ -z "${1:-}" ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
     echo "CaribouLite SDR Validation Script"
     echo ""
-    echo "Usage: $0 [--quick|--full|--rf-test]"
+    echo "Usage: $0 <--quick|--full|--rf-test|--spectrum>"
     echo ""
     echo "Options:"
-    echo "  --quick   OS checks only (kernel modules, boot config, devices)"
-    echo "  --full    OS checks + SoapySDR + hardware self-test (default)"
-    echo "  --rf-test Full test + RF capture verification"
+    echo "  --quick    OS checks only (kernel modules, boot config, devices)"
+    echo "  --full     OS checks + SoapySDR + hardware self-test"
+    echo "  --rf-test  Full test + basic RF capture verification"
+    echo "  --spectrum Full test + spectrum analysis with plot generation"
+    echo "             (requires python3-numpy, python3-matplotlib, python3-scipy,"
+    echo "              python3-soapysdr)"
     echo ""
     echo "Exit codes:"
     echo "  0 - All critical tests passed"
