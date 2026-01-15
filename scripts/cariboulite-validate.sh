@@ -3,11 +3,12 @@
 # CaribouLite SDR Validation Script
 # Validates OS configuration and tests SDR hardware functionality
 #
-# Usage: cariboulite-validate.sh <--quick|--full|--rf-test|--spectrum>
+# Usage: cariboulite-validate.sh <--quick|--full|--rf-test|--spectrum> [-f <freq>]
 #   --quick    : OS checks only (kernel modules, boot config, device nodes)
 #   --full     : OS checks + SoapySDR detection + hardware self-test
 #   --rf-test  : Full test + basic RF capture verification
 #   --spectrum : Full test + spectrum analysis with plot generation
+#   -f <MHz>   : Center frequency for spectrum test (default: 100)
 #
 
 set -euo pipefail
@@ -24,8 +25,9 @@ PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
 
-# Test mode
-TEST_MODE="${1:---full}"
+# Test mode and options
+TEST_MODE=""
+FREQ=100
 
 pass() {
     echo -e "${GREEN}[PASS]${NC} $1"
@@ -364,7 +366,7 @@ run_spectrum_test() {
     local script_dir
     script_dir="$(dirname "$(readlink -f "$0")")"
     local spectrum_script="$script_dir/cariboulite-spectrum.py"
-    local output_image="/tmp/cariboulite_spectrum.png"
+    local output_image="./cariboulite_spectrum_${FREQ}.png"
 
     # Check for spectrum script in various locations
     if [[ ! -f "$spectrum_script" ]]; then
@@ -400,11 +402,11 @@ run_spectrum_test() {
         return
     fi
 
-    info "Running spectrum analysis (this may take a moment)..."
+    info "Running spectrum analysis at ${FREQ} MHz (this may take a moment)..."
     info "Output image: $output_image"
 
     local output
-    if output=$(python3 "$spectrum_script" -f 100 -b 2 -g 50 -o "$output_image" 2>&1); then
+    if output=$(python3 "$spectrum_script" -f "$FREQ" -b 2 -g 50 -o "$output_image" 2>&1); then
         pass "Spectrum capture completed"
 
         if [[ -f "$output_image" ]]; then
@@ -510,13 +512,13 @@ main() {
     print_summary
 }
 
-# Show help if no arguments or -h/--help
-if [[ -z "${1:-}" ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+# Show help
+show_help() {
     echo "CaribouLite SDR Validation Script"
     echo ""
-    echo "Usage: $0 <--quick|--full|--rf-test|--spectrum>"
+    echo "Usage: $0 <--quick|--full|--rf-test|--spectrum> [-f <freq>]"
     echo ""
-    echo "Options:"
+    echo "Test modes:"
     echo "  --quick    OS checks only (kernel modules, boot config, devices)"
     echo "  --full     OS checks + SoapySDR + hardware self-test"
     echo "  --rf-test  Full test + basic RF capture verification"
@@ -524,10 +526,41 @@ if [[ -z "${1:-}" ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; th
     echo "             (requires python3-numpy, python3-matplotlib, python3-scipy,"
     echo "              python3-soapysdr)"
     echo ""
+    echo "Options:"
+    echo "  -f, --freq <MHz>  Center frequency for spectrum test (default: 100)"
+    echo "                    Example: -f 96.3 for FM station at 96.3 MHz"
+    echo ""
     echo "Exit codes:"
     echo "  0 - All critical tests passed"
     echo "  1 - One or more tests failed"
     exit 0
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --quick|--full|--rf-test|--spectrum)
+            TEST_MODE="$1"
+            shift
+            ;;
+        -f|--freq)
+            FREQ="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Show help if no test mode specified
+if [[ -z "$TEST_MODE" ]]; then
+    show_help
 fi
 
 main
