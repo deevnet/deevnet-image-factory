@@ -45,9 +45,10 @@ make proxmox-fedora
 
 - Automation user (`a_autoprov`) with SSH key and passwordless sudo
 - Minimal Fedora Server installation
-- Cloud-init: **not yet** — no cloud-init drive on the template and the package is not
-  installed. Clones boot as `fedora-template` and take a DHCP lease via NetworkManager.
-  Tracked as part of the tenant fabric work.
+- Cloud-init drive, so a clone can be given its hostname, SSH key and addressing
+  at creation time
+- Generalized: machine-id, SSH host keys and NetworkManager state are cleared as the
+  last build step, so clones do not share an identity
 
 ## Required Environment Variables
 

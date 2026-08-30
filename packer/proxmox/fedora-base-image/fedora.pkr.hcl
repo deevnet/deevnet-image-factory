@@ -157,6 +157,12 @@ source "proxmox-iso" "fedora-kickstart" {
   ssh_username   = "a_autoprov"
   ssh_agent_auth = true
 
+  # Cloud-init drive. This is what lets a clone be told its hostname, SSH key
+  # and addressing at creation time - without it every clone boots as
+  # "fedora-template" and there is no way to seed per-VM identity.
+  cloud_init              = true
+  cloud_init_storage_pool = var.storage_pool
+
   # Template configuration
   qemu_agent           = true
   template_description = "Fedora Server ${local.version_tag}, generated on ${timestamp()}"
@@ -176,6 +182,31 @@ build {
       "sudo mkdir -p /tmp/.ansible-root",
       "sudo chmod 0700 /tmp/.ansible-root",
       "sudo chown root:root /tmp/.ansible-root"
+    ]
+  }
+
+  # Must be last. Anything identifying left on disk is inherited by every
+  # clone: a shared machine-id breaks DHCP (systemd sends it as the client
+  # identifier, so clones collide on one lease) and shared host keys mean every
+  # tenant VM presents the same SSH identity.
+  provisioner "shell" {
+    inline = [
+      "sudo cloud-init clean --logs --seed || true",
+
+      # Empty, not missing - systemd generates a fresh ID at boot for an empty
+      # file, but a missing one is a first-boot error on some images.
+      "sudo truncate -s 0 /etc/machine-id",
+      "sudo rm -f /var/lib/dbus/machine-id",
+
+      # NetworkManager's per-install unique ID and cached connections.
+      "sudo rm -f /var/lib/NetworkManager/secret_key /var/lib/NetworkManager/seen-bssids",
+      "sudo rm -f /etc/NetworkManager/system-connections/*.nmconnection",
+
+      # Regenerated on first boot by sshd.
+      "sudo rm -f /etc/ssh/ssh_host_*key*",
+
+      "sudo rm -rf /var/lib/cloud/instances /var/lib/cloud/instance",
+      "sudo sh -c 'rm -f /root/.bash_history /home/a_autoprov/.bash_history' || true"
     ]
   }
 
