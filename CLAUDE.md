@@ -75,17 +75,26 @@ packer build \
 
 ### Building Proxmox Templates
 
-```bash
-# Set required environment variables
-export TF_VAR_proxmox_url="https://proxmox.example.com:8006/api2/json"
-export TF_VAR_proxmox_token_id="user@pam!tokenname"
-export TF_VAR_proxmox_token_secret="your-token-secret"
-export TF_VAR_proxmox_node="pve"
+Preferred: the per-node Make targets. They read the API token from
+`host_vars/<host>/vault.yml` in the Deevnet inventory (via
+`ansible/playbooks/pve-env.yml`) and select that node's disk storage pool, so no
+credentials are exported by hand.
 
-cd packer/proxmox
-packer init fedora-43.pkr.hcl
-packer validate fedora-43.pkr.hcl
-packer build fedora-43.pkr.hcl
+```bash
+make proxmox-fedora-pve2                      # Fedora 44 on node pve2 (hv02)
+make proxmox-fedora-pve1 FEDORA_RELEASE=43    # Fedora 43 on node pve  (hv01)
+
+eval "$(make -s pve2-env)"                    # or export into the shell
+make pve-env-clean                            # remove the rendered file after
+```
+
+Direct packer invocation still works if `TF_VAR_proxmox_*` are exported:
+
+```bash
+cd packer/proxmox/fedora-base-image
+packer init fedora.pkr.hcl
+packer validate -var-file=fedora-44.pkrvars.hcl fedora.pkr.hcl
+packer build   -var-file=fedora-44.pkrvars.hcl fedora.pkr.hcl
 ```
 
 ### File Format
@@ -106,6 +115,10 @@ packer build fedora-43.pkr.hcl
 - `TF_VAR_proxmox_token_id`: API token ID (environment variable)
 - `TF_VAR_proxmox_token_secret`: API token secret (environment variable)
 - `TF_VAR_proxmox_node`: Target Proxmox node (environment variable)
+
+These are normally rendered from the inventory vault by `make pve1-env` /
+`make pve2-env` rather than set by hand. Node map: `pve` = hv01 (10.20.99.21),
+`pve2` = hv02 (10.20.99.22).
 
 ## Prerequisites
 

@@ -11,6 +11,16 @@ SHELL := /usr/bin/bash
 .ONESHELL:
 .SHELLFLAGS := -euo pipefail -c
 
+# ------------------------------------------------------------
+# Build parameters
+# ------------------------------------------------------------
+# Fedora release used for Proxmox template builds. Selects the matching
+# fedora-<release>.pkrvars.hcl. Keep in sync with deevnet_fedora_current in
+# the Deevnet inventory.
+#   make proxmox-fedora                    # current (44)
+#   make proxmox-fedora FEDORA_RELEASE=43  # previous
+FEDORA_RELEASE ?= 44
+
 .DEFAULT_GOAL := help
 
 # Terminal colors
@@ -23,6 +33,58 @@ NC     := \033[0m
 # Artifact source of truth
 # ------------------------------------------------------------
 ARTIFACT_URL := http://artifacts.dvntm.deevnet.net
+
+# ------------------------------------------------------------
+# Proxmox API credentials (read from the Deevnet inventory vault)
+# ------------------------------------------------------------
+# The TF_VAR_proxmox_* variables Packer reads via env() are rendered out of
+# host_vars/<host>/vault.yml rather than exported by hand. hv01 and hv02 are
+# standalone nodes, each with its own API token:
+#
+#   pve1  ->  inventory host hv01,  Proxmox node "pve"   (10.20.99.21)
+#   pve2  ->  inventory host hv02,  Proxmox node "pve2"  (10.20.99.22)
+#
+#   eval "`make -s pve2-env`"     # export into the current shell
+#   make proxmox-fedora-pve2      # or let the build target load them itself
+#
+# Needs the ansible-vault password: set ANSIBLE_VAULT_PASSWORD_FILE, or answer
+# the prompt. Rendered files are mode 0600 under build/pve-env/ (gitignored) and
+# hold a live token secret - run `make pve-env-clean` when finished.
+DEEVNET_INVENTORY ?= $(CURDIR)/../ansible-inventory-deevnet/dvntm
+PVE_ENV_DIR       := $(CURDIR)/build/pve-env
+PVE_ENV_PLAYBOOK  := $(CURDIR)/ansible/playbooks/pve-env.yml
+
+# Inventory host -> Proxmox node name. Override if a node is renamed.
+PVE1_HOST ?= hv01
+PVE1_NODE ?= pve
+PVE2_HOST ?= hv02
+PVE2_NODE ?= pve2
+
+# VM disk storage. The two nodes do NOT expose the same pools, so the Packer
+# default (local-lvm-big-thin, which only exists on pve) is overridden per node.
+# Both of these are lvmthin, so the template's 256G disk is thin-provisioned.
+#   pve   local-lvm-big-thin  1100G   pve2  local-lvm  348G
+PVE1_STORAGE_POOL ?= local-lvm-big-thin
+PVE2_STORAGE_POOL ?= local-lvm
+
+# Passed through to `packer build`, e.g. PACKER_EXTRA_ARGS='-var storage_pool=local-lvm'
+PACKER_EXTRA_ARGS ?=
+
+# Render one hypervisor's credentials.  $(1) = inventory host, $(2) = node name.
+# Ansible chatter goes to stderr so `make -s pveN-env` emits only export lines.
+define pve_render_env
+if [[ ! -d "$(DEEVNET_INVENTORY)" ]]; then
+	echo "$(RED)✗ Inventory not found: $(DEEVNET_INVENTORY)$(NC)" >&2
+	echo "$(YELLOW)  Override with: make <target> DEEVNET_INVENTORY=/path/to/dvntm$(NC)" >&2
+	exit 1
+fi
+mkdir -p "$(PVE_ENV_DIR)"
+chmod 0700 "$(PVE_ENV_DIR)"
+ansible-playbook -i "$(DEEVNET_INVENTORY)" "$(PVE_ENV_PLAYBOOK)" \
+	-e pve_host=$(1) \
+	-e pve_node=$(2) \
+	-e pve_env_file="$(PVE_ENV_DIR)/$(2).env" 1>&2
+endef
 
 # ------------------------------------------------------------
 # Raspberry Pi – Bookworm image pipeline
@@ -84,6 +146,8 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
 .PHONY: init-pi init-proxmox proxmox-fedora
+.PHONY: pve1-env pve2-env pve-env-clean
+.PHONY: proxmox-fedora-pve1 proxmox-fedora-pve2
 .PHONY: proxmox-pve-iso-container proxmox-pve-iso-zfs proxmox-pve-iso-ext4
 .PHONY: proxmox-pve-iso-http proxmox-pve-pxe proxmox-pve-iso-clean
 
@@ -104,7 +168,14 @@ help:
 	@echo "  pi-bookworm-image      Build generic Raspberry Pi Bookworm image (autoprov only)"
 	@echo "  pi-sdr                 Build fully baked Raspberry Pi SDR image (base + offline config)"
 	@echo "  pi-pidp11              Build fully baked Raspberry Pi PiDP-11 image (base + simh)"
-	@echo "  proxmox-fedora         Build Proxmox Fedora 43 template"
+	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
+	@echo "  proxmox-fedora-pve1    ... on node $(PVE1_NODE), credentials from vault ($(PVE1_HOST))"
+	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE), credentials from vault ($(PVE2_HOST))"
+	@echo ""
+	@echo "Proxmox credentials (from the Deevnet inventory vault):"
+	@echo "  pve1-env               Print TF_VAR_proxmox_* exports for $(PVE1_NODE)  (eval it)"
+	@echo "  pve2-env               Print TF_VAR_proxmox_* exports for $(PVE2_NODE)  (eval it)"
+	@echo "  pve-env-clean          Delete the rendered credential files"
 	@echo ""
 	@echo "Proxmox VE bare metal ISO:"
 	@echo "  proxmox-pve-iso-container  Build container with Proxmox tooling (one-time)"
@@ -131,14 +202,14 @@ init-pi:
 	@echo "$(YELLOW)No packer init required – run 'make pi-bookworm-image'$(NC)"
 
 init-proxmox:
-	cd packer/proxmox/fedora-base-image && packer init fedora-43.pkr.hcl
+	cd packer/proxmox/fedora-base-image && packer init fedora.pkr.hcl
 
 # ------------------------------------------------------------
 # Validation
 # ------------------------------------------------------------
 validate:
 	cd packer/pi && packer validate sdr-bookworm.pkr.hcl
-	cd packer/proxmox/fedora-base-image && packer validate fedora-43.pkr.hcl
+	cd packer/proxmox/fedora-base-image && packer validate -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 # ------------------------------------------------------------
 # Pi builds
@@ -394,8 +465,42 @@ check-loop-devices:
 # ------------------------------------------------------------
 # Proxmox VM Template
 # ------------------------------------------------------------
+# Uses whatever TF_VAR_proxmox_* are already exported in your shell.
 proxmox-fedora: init-proxmox
-	cd packer/proxmox/fedora-base-image && packer build fedora-43.pkr.hcl
+	cd packer/proxmox/fedora-base-image && packer build $(PACKER_EXTRA_ARGS) -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+
+# Same build, but with the credentials pulled from the vault for that node.
+proxmox-fedora-pve1: init-proxmox
+	$(call pve_render_env,$(PVE1_HOST),$(PVE1_NODE))
+	source "$(PVE_ENV_DIR)/$(PVE1_NODE).env"
+	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE1_NODE)...$(NC)"
+	cd packer/proxmox/fedora-base-image
+	packer build -var storage_pool=$(PVE1_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
+		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+
+proxmox-fedora-pve2: init-proxmox
+	$(call pve_render_env,$(PVE2_HOST),$(PVE2_NODE))
+	source "$(PVE_ENV_DIR)/$(PVE2_NODE).env"
+	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE2_NODE)...$(NC)"
+	cd packer/proxmox/fedora-base-image
+	packer build -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
+		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+
+# ------------------------------------------------------------
+# Proxmox credentials
+# ------------------------------------------------------------
+# Print exports for the current shell:  eval "`make -s pve2-env`"
+pve1-env:
+	$(call pve_render_env,$(PVE1_HOST),$(PVE1_NODE))
+	cat "$(PVE_ENV_DIR)/$(PVE1_NODE).env"
+
+pve2-env:
+	$(call pve_render_env,$(PVE2_HOST),$(PVE2_NODE))
+	cat "$(PVE_ENV_DIR)/$(PVE2_NODE).env"
+
+pve-env-clean:
+	rm -rf "$(PVE_ENV_DIR)"
+	echo "$(GREEN)✓ Removed rendered Proxmox credentials$(NC)"
 
 # ------------------------------------------------------------
 # Proxmox VE Bare Metal ISO

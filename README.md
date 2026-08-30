@@ -8,7 +8,7 @@ Builds customized OS images for Raspberry Pi devices, Proxmox VM templates, and 
 |--------|-------------|
 | `make pi-sdr` | Raspberry Pi SDR image with CaribouLite HAT support |
 | `make pi-pidp11` | Raspberry Pi PiDP-11 image with SIMH emulator |
-| `make proxmox-fedora` | Proxmox Fedora 43 VM template |
+| `make proxmox-fedora` | Proxmox Fedora VM template (`FEDORA_RELEASE`, default 44) |
 | `make proxmox-pve-iso-zfs` | Proxmox VE bare metal ISO (ZFS) |
 | `make proxmox-pve-iso-ext4` | Proxmox VE bare metal ISO (ext4+LVM) |
 | `make proxmox-pve-pxe` | Extract PXE boot artifacts for network install |
@@ -24,11 +24,12 @@ make check-deps
 # Build a Raspberry Pi SDR image
 make pi-sdr
 
-# Build a Proxmox Fedora template (requires env vars)
-export TF_VAR_proxmox_url="https://proxmox:8006/api2/json"
-export TF_VAR_proxmox_token_id="user@pam!token"
-export TF_VAR_proxmox_token_secret="secret"
-export TF_VAR_proxmox_node="pve"
+# Build a Proxmox Fedora template - credentials come from the inventory vault
+make proxmox-fedora-pve1     # node pve  (hv01)
+make proxmox-fedora-pve2     # node pve2 (hv02)
+
+# Or export them into your shell first, then use the plain target
+eval "$(make -s pve2-env)"
 make proxmox-fedora
 ```
 

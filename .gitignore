@@ -1,4 +1,4 @@
-fedora-43-manifest.json
+fedora-*-manifest.json
 
 ###############################################################################
 # Deevnet Image Factory – Git Ignore
@@ -29,6 +29,10 @@ packer/pi/*.xz
 # -----------------------------------------------------------------------------
 build/
 build/**
+
+# Rendered Proxmox API credentials (make pve1-env / pve2-env) - never commit
+build/pve-env/
+*.env
 
 # -----------------------------------------------------------------------------
 # Packer outputs / manifests
