@@ -230,7 +230,16 @@ build {
   provisioner "shell" {
     inline = [
       # Install additional packages
-      "sudo dnf -y install podman python3-libdnf5",
+      # cloud-init is here rather than in the kickstart because it is not on
+      # the Fedora Server DVD, and %packages runs with --ignoremissing -
+      # listing it there fails silently and ships a template that cannot name
+      # or address its own clones.
+      "sudo dnf -y install podman python3-libdnf5 cloud-init cloud-utils-growpart",
+
+      # Fail loudly if that did not take, rather than discovering it when a
+      # clone boots as 'fedora-template' with no address.
+      "rpm -q cloud-init cloud-utils-growpart",
+      "sudo systemctl enable cloud-init cloud-init-local cloud-config cloud-final",
 
       # Prepare Ansible remote_tmp directory
       "sudo mkdir -p /tmp/.ansible-root",

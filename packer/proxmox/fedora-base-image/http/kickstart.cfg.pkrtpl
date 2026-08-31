@@ -49,11 +49,10 @@ python3
 python3-libselinux
 curl
 qemu-guest-agent
-# Clones get their identity and addressing from the Proxmox cloud-init drive:
-# the tenant fabric hands out addresses from its own IPAM, and every clone
-# needs a distinct hostname and its own SSH key.
-cloud-init
-cloud-utils-growpart
+# cloud-init is deliberately NOT listed here: it is not on the Fedora Server
+# DVD, and this section runs with --ignoremissing, so naming it would be
+# silently skipped and the template would ship without it. It is installed
+# from the network by a Packer provisioner instead, which can verify it.
 %end
 
 # Enable kdump (optional; keep if you want parity with older builds)
@@ -95,11 +94,10 @@ EOF
 chmod 0440 /etc/sudoers.d/010_a_autoprov-nopasswd
 restorecon /etc/sudoers.d/010_a_autoprov-nopasswd || true
 
-# Enable cloud-init so a clone picks up the Proxmox cloud-init drive on first
-# boot. Generalization - clearing machine-id, host keys and cloud-init state -
-# deliberately does NOT happen here: this runs at install time, and Packer
-# boots the VM afterwards to provision it, which would regenerate all of it.
-# It is the last Packer provisioner instead.
-systemctl enable cloud-init cloud-init-local cloud-config cloud-final || true
+# cloud-init is installed and enabled by a Packer provisioner, not here - it
+# is not on the install media. Generalization (clearing machine-id, host keys
+# and cloud-init state) is likewise the LAST provisioner: this section runs at
+# install time and Packer boots the VM afterwards to provision it, which would
+# regenerate everything cleared here.
 
 %end
