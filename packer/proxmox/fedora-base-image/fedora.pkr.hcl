@@ -50,6 +50,48 @@ variable "iso_sha256" {
   default = "85837793bfa36db6bc709b4cecd2ec116951b87d9c53c3d95eb2fac8dcf7cf1f"
 }
 
+# --- Build-time networking ---------------------------------------------------
+# The installer needs an address before it can fetch the kickstart, and the
+# installed system needs one for Packer's SSH provisioner. Using DHCP for that
+# couples image builds to a healthy DHCP pool: if the pool is down or full, the
+# build boots, waits, and fails ~30 minutes later in dracut with an error that
+# points at inst.stage2 rather than at the network.
+#
+# A pinned address removes that coupling - a build either works or fails for
+# reasons inside the build. It is transient: the generalize step at the end of
+# the build removes the NetworkManager connection along with machine-id and the
+# host keys, so clones of the template do NOT inherit this address. They are
+# addressed by cloud-init from the tenant fabric instead.
+#
+# 10.20.99.79 sits in the .70-.79 experimental/lab range of the dvntm
+# addressing plan, outside the .200-.230 DHCP pool and outside the .2-.49
+# static infrastructure range.
+variable "build_use_dhcp" {
+  type        = bool
+  description = "Address the build VM by DHCP instead of the pinned address."
+  default     = false
+}
+
+variable "build_ip" {
+  type    = string
+  default = "10.20.99.79"
+}
+
+variable "build_netmask" {
+  type    = string
+  default = "255.255.255.0"
+}
+
+variable "build_gateway" {
+  type    = string
+  default = "10.20.99.1"
+}
+
+variable "build_nameserver" {
+  type    = string
+  default = "10.20.99.1"
+}
+
 # --- ISO sourcing ---
 # false (default): use an ISO already present in Proxmox storage at local:iso/.
 # true:            have Proxmox download it from the Deevnet artifact server,
@@ -83,6 +125,12 @@ variable "bridge_name" {
 }
 
 locals {
+  # dracut ip= syntax: client:server:gateway:netmask:hostname:interface:autoconf
+  # The interface field is deliberately empty - there is exactly one NIC on the
+  # build VM and its kernel name varies with the machine type, so naming it
+  # would be a guess that fails silently.
+  boot_ip = var.build_use_dhcp ? "ip=dhcp" : "ip=${var.build_ip}::${var.build_gateway}:${var.build_netmask}:packer-build::none"
+
   version_tag = "${var.fedora_release}-${var.fedora_build}"
   iso_name    = "Fedora-Server-dvd-x86_64-${local.version_tag}.iso"
   iso_url     = "${var.artifact_server_url}/fedora/${var.fedora_release}/iso/${local.iso_name}"
@@ -100,7 +148,7 @@ source "proxmox-iso" "fedora-kickstart" {
     "<wait5>",
     "c<wait>",
     "<enter><wait>",
-    "linux (cd)/images/pxeboot/vmlinuz ip=dhcp rd.neednet=1 inst.stage2=cdrom inst.repo=cdrom inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/kickstart.cfg<enter><wait5>",
+    "linux (cd)/images/pxeboot/vmlinuz ${local.boot_ip} rd.neednet=1 inst.stage2=cdrom inst.repo=cdrom inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/kickstart.cfg<enter><wait5>",
     "initrd (cd)/images/pxeboot/initrd.img<enter><wait15>",
     "boot<enter>"
   ]
@@ -115,7 +163,13 @@ source "proxmox-iso" "fedora-kickstart" {
 
   # HTTP server for kickstart file (templated for {{ .HTTPIP }} substitution)
   http_content = {
-    "/kickstart.cfg" = file("${path.root}/http/kickstart.cfg")
+    "/kickstart.cfg" = templatefile("${path.root}/http/kickstart.cfg.pkrtpl", {
+      use_dhcp   = var.build_use_dhcp
+      ip         = var.build_ip
+      netmask    = var.build_netmask
+      gateway    = var.build_gateway
+      nameserver = var.build_nameserver
+    })
   }
 
   # Boot ISO configuration

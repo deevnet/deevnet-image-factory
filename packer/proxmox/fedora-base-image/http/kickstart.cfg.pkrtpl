@@ -15,7 +15,15 @@ keyboard us
 timezone America/New_York --utc
 
 # Network configuration (device-agnostic)
+# Addressed statically at build time so the build does not depend on a healthy
+# DHCP pool. This does NOT reach clones: the generalize step at the end of the
+# build removes the NetworkManager connection, machine-id and host keys, and
+# clones are addressed by cloud-init from the tenant fabric.
+%{ if use_dhcp ~}
 network --bootproto=dhcp --device=link --activate --onboot=on --ipv6=auto
+%{ else ~}
+network --bootproto=static --ip=${ip} --netmask=${netmask} --gateway=${gateway} --nameserver=${nameserver} --device=link --activate --onboot=on --ipv6=auto
+%{ endif ~}
 network --hostname=fedora-template
 
 # Root password (disabled - use SSH key auth only)
