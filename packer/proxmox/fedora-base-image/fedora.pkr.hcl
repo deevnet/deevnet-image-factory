@@ -239,7 +239,16 @@ build {
       # Fail loudly if that did not take, rather than discovering it when a
       # clone boots as 'fedora-template' with no address.
       "rpm -q cloud-init cloud-utils-growpart",
-      "sudo systemctl enable cloud-init cloud-init-local cloud-config cloud-final",
+      # Unit names are not stable across cloud-init versions: 24.3 renamed
+      # cloud-init.service to cloud-init-network.service, so a fixed list
+      # breaks on upgrade - which is how this was found. Enable whichever of
+      # the known units this version actually ships.
+      "for u in cloud-init-local cloud-init-network cloud-init cloud-config cloud-final; do systemctl cat $u.service >/dev/null 2>&1 && sudo systemctl enable $u.service || true; done",
+      "sudo systemctl enable cloud-init.target",
+
+      # cloud-init-local exists in every version and runs first; if it is not
+      # enabled, nothing else will run either.
+      "systemctl is-enabled cloud-init-local.service",
 
       # Prepare Ansible remote_tmp directory
       "sudo mkdir -p /tmp/.ansible-root",
