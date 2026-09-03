@@ -11,8 +11,8 @@ Documentation:
 ```
 proxmox/
 ├── fedora-base-image/     # Fedora VM template for Proxmox
-│   ├── fedora-43.pkr.hcl
-│   └── http/kickstart.cfg
+│   ├── fedora.pkr.hcl
+│   └── http/kickstart.cfg.pkrtpl
 └── pve-iso/               # Proxmox VE bare metal installer ISO builder
     ├── Containerfile
     ├── answer-zfs.toml.template

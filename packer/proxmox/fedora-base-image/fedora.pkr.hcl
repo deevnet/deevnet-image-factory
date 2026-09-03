@@ -119,6 +119,20 @@ variable "storage_pool" {
   default = "local-lvm-big-thin"
 }
 
+# The template carries an OS disk and nothing else. It is deliberately small:
+# sized for an operating system and its packages, not for a workload. A clone
+# that needs more grows this disk on first boot - cloud-init's growpart/resizefs
+# handle that unaided, which is why the kickstart partitions plain rather than
+# LVM - and bulk capacity belongs on a separate data disk attached by whatever
+# creates the VM. Sizing the template for the largest imaginable workload makes
+# every clone slower to copy, migrate and back up, and cannot be undone: Proxmox
+# grows a disk but never shrinks one.
+variable "os_disk_size" {
+  type        = string
+  description = "Size of the template's OS disk. Clones grow it via cloud-init; bulk capacity belongs on a separate data disk."
+  default     = "32G"
+}
+
 variable "bridge_name" {
   type    = string
   default = "vmbr0"
@@ -156,7 +170,7 @@ source "proxmox-iso" "fedora-kickstart" {
 
   # Disk configuration
   disks {
-    disk_size    = "256G"
+    disk_size    = var.os_disk_size
     storage_pool = var.storage_pool
     type         = "scsi"
   }

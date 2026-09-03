@@ -47,6 +47,10 @@ make proxmox-fedora
 - Minimal Fedora Server installation
 - Cloud-init drive, so a clone can be given its hostname, SSH key and addressing
   at creation time
+- A small (32G), plain-partitioned OS disk. It holds the operating system and
+  nothing else; a clone that needs more grows it on first boot via cloud-init's
+  growpart/resizefs, and bulk capacity belongs on a separate data disk attached
+  by whatever creates the VM. See `os_disk_size` in `fedora.pkr.hcl`.
 - Generalized: machine-id, SSH host keys and NetworkManager state are cleared as the
   last build step, so clones do not share an identity
 
@@ -68,4 +72,4 @@ Template is stored directly in Proxmox (not as a local file).
 - `packer/proxmox/fedora-base-image/fedora.pkr.hcl` - Packer template definition
 - `packer/proxmox/fedora-base-image/fedora-*.pkrvars.hcl` - per-release variables
 - `ansible/playbooks/pve-env.yml` - renders vault credentials into TF_VAR_proxmox_*
-- `packer/proxmox/fedora-base-image/http/kickstart.cfg` - Kickstart configuration
+- `packer/proxmox/fedora-base-image/http/kickstart.cfg.pkrtpl` - Kickstart configuration

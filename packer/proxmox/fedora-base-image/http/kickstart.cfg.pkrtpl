@@ -33,9 +33,29 @@ rootpw --lock
 firewall --enabled --service=ssh
 
 # Disk configuration
+# Partitioned explicitly rather than with autopart, and plain rather than LVM.
+#
+# plain, not lvm: cloud-init's growpart/resizefs grow a partition-backed root on
+# a clone with a larger disk using only what is already in the image. They cannot
+# grow a logical volume - that needs extra tooling here and a first-boot hook in
+# every consumer - so the OS disk is partitioned directly.
+#
+# explicit, not autopart: autopart caps / at 15 GiB regardless of disk size, so
+# a 32G template shipped a 15G root and stranded the other 17G in every clone
+# that did not resize. --nohome stops it splitting /home off but does not lift
+# that cap. Listing the partitions here is the only way / actually fills the
+# disk. / is declared last and is the only --grow partition, so it takes the
+# remainder and stays the LAST partition on disk - which is what growpart needs
+# to extend it on a clone with a bigger disk.
+#
+# --disklabel=gpt is deliberate: it is what anaconda chose here anyway, and
+# biosboot only exists on GPT. growpart handles GPT without the gdisk package
+# (verified on a 32G->64G clone: growpart 0.33 uses sfdisk, not sgdisk).
 zerombr
-clearpart --all --initlabel
-autopart --type=lvm
+clearpart --all --initlabel --disklabel=gpt
+part biosboot --fstype=biosboot --size=1
+part /boot    --fstype=xfs      --size=2048
+part /        --fstype=xfs      --size=1024 --grow
 
 # Installation source
 cdrom
