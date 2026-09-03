@@ -62,7 +62,9 @@ PVE2_NODE ?= pve2
 
 # VM disk storage. The two nodes do NOT expose the same pools, so the Packer
 # default (local-lvm-big-thin, which only exists on pve) is overridden per node.
-# Both of these are lvmthin, so the template's 256G disk is thin-provisioned.
+# Both are lvmthin. The template's OS disk is 32G (see os_disk_size in
+# fedora.pkr.hcl); clones grow it at first boot, and workload data belongs on a
+# separate data disk, not on a bigger template.
 #   pve   local-lvm-big-thin  1100G   pve2  local-lvm  348G
 PVE1_STORAGE_POOL ?= local-lvm-big-thin
 PVE2_STORAGE_POOL ?= local-lvm
