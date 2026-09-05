@@ -3,7 +3,7 @@ packer {
   # No required_plugins needed when using Docker-based build
 }
 
-# Path to the SSH pubkey that Makefile downloads from artifacts.dvntm.deevnet.net.
+# Path to the SSH pubkey that Makefile downloads from artifacts.mobile.deevnet.net.
 # This must exist BEFORE packer starts (because the 'file' provisioner is prepared up-front).
 variable "ssh_pubkey_local_path" {
   type    = string
