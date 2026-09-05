@@ -55,9 +55,9 @@ PVE_ENV_DIR       := $(CURDIR)/build/pve-env
 PVE_ENV_PLAYBOOK  := $(CURDIR)/ansible/playbooks/pve-env.yml
 
 # Inventory host -> Proxmox node name. Override if a node is renamed.
-PVE1_HOST ?= hv01
+PVE1_HOST ?= dv02hyp001p01
 PVE1_NODE ?= pve
-PVE2_HOST ?= hv02
+PVE2_HOST ?= dv02hyp002p02
 PVE2_NODE ?= pve2
 
 # VM disk storage. The two nodes do NOT expose the same pools, so the Packer
