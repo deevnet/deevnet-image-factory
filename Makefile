@@ -38,11 +38,14 @@ ARTIFACT_URL := http://artifacts.mobile.deevnet.net
 # Proxmox API credentials (read from the Deevnet inventory vault)
 # ------------------------------------------------------------
 # The TF_VAR_proxmox_* variables Packer reads via env() are rendered out of
-# host_vars/<host>/vault.yml rather than exported by hand. hv01 and hv02 are
-# standalone nodes, each with its own API token:
+# host_vars/<host>/vault.yml rather than exported by hand. The two hypervisors
+# are standalone nodes, each with its own API token:
 #
-#   pve1  ->  inventory host hv01,  Proxmox node "pve"   (10.20.99.21)
-#   pve2  ->  inventory host hv02,  Proxmox node "pve2"  (10.20.99.22)
+#   pve1  ->  dv02hyp001p01  (10.20.99.21)
+#   pve2  ->  dv02hyp002p02  (10.20.99.22)
+#
+# pve1/pve2 here are slot names for the first and second hypervisor, not node
+# names: since ADR-0008 the node name is the inventory name (see PVE*_NODE).
 #
 #   eval "`make -s pve2-env`"     # export into the current shell
 #   make proxmox-fedora-pve2      # or let the build target load them itself
@@ -54,18 +57,21 @@ DEEVNET_INVENTORY ?= $(CURDIR)/../ansible-inventory-deevnet/mobile
 PVE_ENV_DIR       := $(CURDIR)/build/pve-env
 PVE_ENV_PLAYBOOK  := $(CURDIR)/ansible/playbooks/pve-env.yml
 
-# Inventory host -> Proxmox node name. Override if a node is renamed.
+# Inventory host -> Proxmox node name. These are now the same string on both
+# hypervisors - the node was renamed to match its inventory name - but the pair
+# is kept so a node that ever diverges again is one variable, not a code change.
 PVE1_HOST ?= dv02hyp001p01
-PVE1_NODE ?= pve
+PVE1_NODE ?= dv02hyp001p01
 PVE2_HOST ?= dv02hyp002p02
-PVE2_NODE ?= pve2
+PVE2_NODE ?= dv02hyp002p02
 
 # VM disk storage. The two nodes do NOT expose the same pools, so the Packer
-# default (local-lvm-big-thin, which only exists on pve) is overridden per node.
+# default (local-lvm-big-thin, which only exists on hyp001) is overridden per node.
 # Both are lvmthin. The template's OS disk is 32G (see os_disk_size in
 # fedora.pkr.hcl); clones grow it at first boot, and workload data belongs on a
 # separate data disk, not on a bigger template.
-#   pve   local-lvm-big-thin  1100G   pve2  local-lvm  348G
+#   dv02hyp001p01  local-lvm-big-thin  1100G
+#   dv02hyp002p02  local-lvm            348G
 PVE1_STORAGE_POOL ?= local-lvm-big-thin
 PVE2_STORAGE_POOL ?= local-lvm
 
@@ -130,6 +136,11 @@ PVE_ISO_LOCAL := $(CURDIR)/packer/proxmox/pve-iso/$(PVE_ISO_FILENAME)
 PVE_ISO_CONTAINER := localhost/pve-iso-builder:latest
 
 # Build variables (can be overridden on command line)
+#
+# PVE_HOSTNAME is the installer's default and is deliberately generic - it is
+# the Proxmox default that produced the "pve"/"pve2" node names ADR-0008 then
+# had to undo. A node name is not safely renamable after the fact, so pass the
+# real inventory name at build time: PVE_HOSTNAME=dv02hyp003p01.mobile.deevnet.net
 PVE_HOSTNAME ?= pve.local
 PVE_TIMEZONE ?= America/New_York
 PVE_COUNTRY ?= us
