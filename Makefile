@@ -50,7 +50,7 @@ ARTIFACT_URL := http://artifacts.dvntm.deevnet.net
 # Needs the ansible-vault password: set ANSIBLE_VAULT_PASSWORD_FILE, or answer
 # the prompt. Rendered files are mode 0600 under build/pve-env/ (gitignored) and
 # hold a live token secret - run `make pve-env-clean` when finished.
-DEEVNET_INVENTORY ?= $(CURDIR)/../ansible-inventory-deevnet/dvntm
+DEEVNET_INVENTORY ?= $(CURDIR)/../ansible-inventory-deevnet/mobile
 PVE_ENV_DIR       := $(CURDIR)/build/pve-env
 PVE_ENV_PLAYBOOK  := $(CURDIR)/ansible/playbooks/pve-env.yml
 

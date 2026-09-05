@@ -32,7 +32,7 @@ variable "proxmox_node" {
 # --- Fedora Release ---
 # Bumping a release is a two-line change here (or pass a *.pkrvars.hcl file).
 # Keep these in sync with deevnet_fedora_current in the Deevnet inventory
-# (ansible-inventory-deevnet/dvntm/group_vars/all/main.yml).
+# (ansible-inventory-deevnet/mobile/group_vars/all/main.yml).
 variable "fedora_release" {
   type    = string
   default = "44"
