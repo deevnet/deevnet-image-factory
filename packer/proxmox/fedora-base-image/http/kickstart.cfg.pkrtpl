@@ -97,7 +97,7 @@ install -d -m 0700 -o a_autoprov -g a_autoprov /home/a_autoprov/.ssh
 
 # Fetch SSH key from artifact server
 curl --connect-timeout 5 --max-time 15 -fsSL \
-  "http://artifacts.dvntm.deevnet.net/keys/ssh/a_autoprov_rsa.pub" \
+  "http://artifacts.mobile.deevnet.net/keys/ssh/a_autoprov_rsa.pub" \
   -o /home/a_autoprov/.ssh/authorized_keys || true
 
 # Enforce perms/ownership

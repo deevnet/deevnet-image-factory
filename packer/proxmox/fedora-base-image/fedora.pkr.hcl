@@ -63,7 +63,7 @@ variable "iso_sha256" {
 # host keys, so clones of the template do NOT inherit this address. They are
 # addressed by cloud-init from the tenant fabric instead.
 #
-# 10.20.99.79 sits in the .70-.79 experimental/lab range of the dvntm
+# 10.20.99.79 sits in the .70-.79 experimental/lab range of the mobile
 # addressing plan, outside the .200-.230 DHCP pool and outside the .2-.49
 # static infrastructure range.
 variable "build_use_dhcp" {
@@ -105,7 +105,7 @@ variable "iso_download_pve" {
 
 variable "artifact_server_url" {
   type    = string
-  default = "http://artifacts.dvntm.deevnet.net"
+  default = "http://artifacts.mobile.deevnet.net"
 }
 
 variable "iso_storage_pool" {

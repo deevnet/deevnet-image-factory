@@ -32,7 +32,7 @@ NC     := \033[0m
 # ------------------------------------------------------------
 # Artifact source of truth
 # ------------------------------------------------------------
-ARTIFACT_URL := http://artifacts.dvntm.deevnet.net
+ARTIFACT_URL := http://artifacts.mobile.deevnet.net
 
 # ------------------------------------------------------------
 # Proxmox API credentials (read from the Deevnet inventory vault)
@@ -77,7 +77,7 @@ PACKER_EXTRA_ARGS ?=
 define pve_render_env
 if [[ ! -d "$(DEEVNET_INVENTORY)" ]]; then
 	echo "$(RED)✗ Inventory not found: $(DEEVNET_INVENTORY)$(NC)" >&2
-	echo "$(YELLOW)  Override with: make <target> DEEVNET_INVENTORY=/path/to/dvntm$(NC)" >&2
+	echo "$(YELLOW)  Override with: make <target> DEEVNET_INVENTORY=/path/to/mobile$(NC)" >&2
 	exit 1
 fi
 mkdir -p "$(PVE_ENV_DIR)"
@@ -93,7 +93,7 @@ endef
 # ------------------------------------------------------------
 
 # Image naming components
-PI_IMAGE_PLATFORM := dvntm
+PI_IMAGE_PLATFORM := mobile
 PI_IMAGE_VARIANT  := pi-sdr
 PI_IMAGE_NAME     := raspios-bookworm-$(PI_IMAGE_PLATFORM)-$(PI_IMAGE_VARIANT)
 
