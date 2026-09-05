@@ -8,7 +8,7 @@
 # Invoked by the Makefile's pve1-env / pve2-env / proxmox-fedora-pve* targets;
 # it is not usually run by hand. If you do:
 #
-#   ansible-playbook -i ../ansible-inventory-deevnet/dvntm \
+#   ansible-playbook -i ../ansible-inventory-deevnet/mobile \
 #     ansible/playbooks/pve-env.yml \
 #     -e pve_host=hv02 -e pve_node=pve2 -e pve_env_file=build/pve-env/pve2.env
 #
