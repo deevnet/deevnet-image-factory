@@ -150,6 +150,12 @@ PVE_ROOT_PASSWORD_HASH ?=
 PVE_SSH_PUBKEY ?=
 PVE_ANSWER_URL ?=
 PVE_CERT_FP ?=
+# udev ID_SERIAL of the disk Proxmox installs onto. Set it for any node with a
+# data disk; unpinned, the installer takes the first disk it finds. For a SATA
+# disk this is model_serial - the /dev/disk/by-id/ata-* name without "ata-" -
+# not the short serial lsblk prints. Recorded per node in inventory as
+# proxmox_install_disk_serial.
+PVE_DISK_SERIAL ?=
 
 # Output paths
 PVE_ISO_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/output
@@ -551,6 +557,7 @@ proxmox-pve-iso-zfs: $(PVE_ISO_LOCAL) $(PI_BOOKWORM_SSH_PUBKEY_FILE)
 	podman run --rm \
 		-v "$(CURDIR)/packer/proxmox/pve-iso":/work:rw \
 		-e PVE_HOSTNAME="$(PVE_HOSTNAME)" \
+		-e PVE_DISK_SERIAL="$(PVE_DISK_SERIAL)" \
 		-e PVE_TIMEZONE="$(PVE_TIMEZONE)" \
 		-e PVE_COUNTRY="$(PVE_COUNTRY)" \
 		-e PVE_KEYBOARD="$(PVE_KEYBOARD)" \
@@ -576,6 +583,7 @@ proxmox-pve-iso-ext4: $(PVE_ISO_LOCAL) $(PI_BOOKWORM_SSH_PUBKEY_FILE)
 	podman run --rm \
 		-v "$(CURDIR)/packer/proxmox/pve-iso":/work:rw \
 		-e PVE_HOSTNAME="$(PVE_HOSTNAME)" \
+		-e PVE_DISK_SERIAL="$(PVE_DISK_SERIAL)" \
 		-e PVE_TIMEZONE="$(PVE_TIMEZONE)" \
 		-e PVE_COUNTRY="$(PVE_COUNTRY)" \
 		-e PVE_KEYBOARD="$(PVE_KEYBOARD)" \

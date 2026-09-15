@@ -35,6 +35,12 @@ source = "from-dhcp"
 
 [disk-setup]
 filesystem = "zfs"
+
+# Install disk. Set PVE_DISK_SERIAL at build time to pin it by its udev
+# ID_SERIAL; list serials with: proxmox-auto-install-assistant device-info -t disk
+# Unpinned, the installer takes the first disk it finds - on a node with a data
+# disk, that can be the data disk.
+__PVE_DISK_FILTER__
 # Select all available disks for ZFS (can be filtered)
 # disk_list = ["sda", "sdb"]
 

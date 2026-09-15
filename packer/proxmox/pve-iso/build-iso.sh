@@ -22,6 +22,7 @@
 #   PVE_ANSWER_URL   - Answer file URL (required for http mode)
 #   PVE_CERT_FP      - HTTPS certificate fingerprint (optional, for http mode)
 #   PVE_FILESYSTEM   - Filesystem type: zfs or ext4 (default: zfs)
+#   PVE_DISK_SERIAL  - udev ID_SERIAL of the install disk (optional, embedded mode)
 
 set -euo pipefail
 
@@ -53,6 +54,7 @@ Environment variables:
   PVE_ANSWER_URL         Answer file URL (required for http mode)
   PVE_CERT_FP            HTTPS cert fingerprint (optional)
   PVE_FILESYSTEM         zfs or ext4 (default: zfs)
+  PVE_DISK_SERIAL        udev ID_SERIAL of the install disk (optional)
 EOF
     exit 1
 }
@@ -68,6 +70,7 @@ EOF
 : "${PVE_ANSWER_URL:=}"
 : "${PVE_CERT_FP:=}"
 : "${PVE_FILESYSTEM:=zfs}"
+: "${PVE_DISK_SERIAL:=}"
 
 [[ $# -ge 3 ]] || usage
 
@@ -135,6 +138,16 @@ if [[ "$MODE" == "embedded" ]]; then
         -e "s|__PVE_EMAIL__|${PVE_EMAIL}|g" \
         -e "s|__PVE_ROOT_PASSWORD_HASH__|${PVE_ROOT_PASSWORD_HASH}|g" \
         "$TEMPLATE_FILE" > "$ANSWER_FILE"
+
+    # Pin the install disk. A node with a data disk must not let the installer
+    # choose: the first disk it finds can be the one holding every VM.
+    if [[ -n "$PVE_DISK_SERIAL" ]]; then
+        sed -i "s|__PVE_DISK_FILTER__|filter.ID_SERIAL = \"${PVE_DISK_SERIAL}\"|" "$ANSWER_FILE"
+        log_info "Install disk pinned to ID_SERIAL=${PVE_DISK_SERIAL}"
+    else
+        sed -i '/__PVE_DISK_FILTER__/d' "$ANSWER_FILE"
+        log_warn "PVE_DISK_SERIAL not set - the installer will take the first disk it finds"
+    fi
 
     # Insert SSH keys (multi-line)
     if [[ -n "$SSH_KEYS_TOML" ]]; then
