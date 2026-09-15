@@ -35,6 +35,12 @@ source = "from-dhcp"
 
 [disk-setup]
 filesystem = "ext4"
+
+# Install disk. Set PVE_DISK_SERIAL at build time to pin it by its udev
+# ID_SERIAL; list serials with: proxmox-auto-install-assistant device-info -t disk
+# Unpinned, the installer takes the first disk it finds - on a node with a data
+# disk, that can be the data disk.
+__PVE_DISK_FILTER__
 # Disk selection - first available disk by default
 # disk_list = ["sda"]
 

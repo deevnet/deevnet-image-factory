@@ -57,6 +57,7 @@ make proxmox-pve-iso-http \
 | `PVE_EMAIL` | `root@localhost` | Admin email |
 | `PVE_ROOT_PASSWORD_HASH` | (required) | Root password hash |
 | `PVE_ANSWER_URL` | (for http mode) | Answer file URL |
+| `PVE_DISK_SERIAL` | (none) | udev `ID_SERIAL` of the install disk. Set it on any node with a data disk: unpinned, the installer takes the first disk it finds. |
 
 ## Output
 
