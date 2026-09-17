@@ -6,42 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository builds customized OS images for various platforms using HashiCorp Packer. Images are created for Raspberry Pi (ARM-based) and Proxmox virtual machines. The primary purpose is to create base images with an automation user (`a_autoprov`) configured for passwordless SSH and sudo access, enabling downstream Ansible automation.
 
-## Repository Structure
-
-```
-packer/
-├── common/             # Shared variables and configuration
-├── proxmox/            # Proxmox VM template builds (Fedora)
-├── pi/                 # Raspberry Pi image builds
-└── builder/            # Builder node image (self-hosting)
-
-iso/
-└── fedora/             # Fedora kickstart configuration
-
-ansible/
-├── playbooks/          # Ansible playbooks for provisioning
-└── inventories/        # Inventory files
-
-docs/                   # Project documentation
-spec/                   # Requirements and specifications
-```
-
-## Architecture
-
-### Image Build Hierarchy
-
-The repository uses a platform-organized architecture:
-
-1. **Proxmox Templates** (`packer/proxmox/`): VM templates for Proxmox VE
-2. **Raspberry Pi Images** (`packer/pi/`): ARM64 images for Raspberry Pi devices
-3. **Builder Node** (`packer/builder/`): Self-hosting build infrastructure image
-4. **ISO Builds** (`iso/`): Bootable ISOs with kickstart/autoinstall
-
-### Image Building Pipeline
-
-1. **Base Image Sourcing**: Downloads official OS images from local nginx artifact server or remote sources
-2. **Base Provisioning**: Creates automation user and configures fundamental access/permissions
-3. **Output**: Platform-specific artifacts (`.img` files for Raspberry Pi, VM templates for Proxmox)
+Base images are sourced from the local nginx artifact server (or remote), provisioned
+with the automation user, and emitted as `.img` files for Raspberry Pi or VM templates
+for Proxmox, each with a manifest JSON.
 
 ### Platform-Specific Details
 
@@ -58,20 +25,7 @@ The repository uses a platform-organized architecture:
 
 ## Development Commands
 
-### Building Raspberry Pi Images
-
-```bash
-cd packer/pi
-packer init sdr-bookworm.pkr.hcl
-packer validate sdr-bookworm.pkr.hcl
-packer build sdr-bookworm.pkr.hcl
-
-# With custom variables
-packer build \
-  -var "base_image_url=http://your-server/path/to/image.img.xz" \
-  -var "ssh_pubkey_url=http://your-server/path/to/key.pub" \
-  sdr-bookworm.pkr.hcl
-```
+Run `make help` for the full target list.
 
 ### Building Proxmox Templates
 
@@ -88,14 +42,7 @@ eval "$(make -s pve2-env)"                    # or export into the shell
 make pve-env-clean                            # remove the rendered file after
 ```
 
-Direct packer invocation still works if `TF_VAR_proxmox_*` are exported:
-
-```bash
-cd packer/proxmox/fedora-base-image
-packer init fedora.pkr.hcl
-packer validate -var-file=fedora-44.pkrvars.hcl fedora.pkr.hcl
-packer build   -var-file=fedora-44.pkrvars.hcl fedora.pkr.hcl
-```
+Direct packer invocation still works if `TF_VAR_proxmox_*` are exported.
 
 ### File Format
 
@@ -111,14 +58,10 @@ packer build   -var-file=fedora-44.pkrvars.hcl fedora.pkr.hcl
 
 ### Proxmox Variables
 
-- `TF_VAR_proxmox_url`: Proxmox API URL (environment variable)
-- `TF_VAR_proxmox_token_id`: API token ID (environment variable)
-- `TF_VAR_proxmox_token_secret`: API token secret (environment variable)
-- `TF_VAR_proxmox_node`: Target Proxmox node (environment variable)
-
-These are normally rendered from the inventory vault by `make pve1-env` /
-`make pve2-env` rather than set by hand. Node map: `pve` = hv01 (10.20.99.21),
-`pve2` = hv02 (10.20.99.22).
+`TF_VAR_proxmox_url`, `TF_VAR_proxmox_token_id`, `TF_VAR_proxmox_token_secret`,
+and `TF_VAR_proxmox_node` are environment variables. These are normally rendered
+from the inventory vault by `make pve1-env` / `make pve2-env` rather than set by
+hand. Node map: `pve` = hv01 (10.20.99.21), `pve2` = hv02 (10.20.99.22).
 
 ## Prerequisites
 
@@ -134,9 +77,3 @@ These are normally rendered from the inventory vault by `make pve1-env` /
 - Access to Proxmox VE infrastructure
 - API token with appropriate permissions
 - Fedora Server ISO uploaded to Proxmox storage
-
-## Output Artifacts
-
-Build outputs vary by platform:
-- **Raspberry Pi**: `.img` files ready to flash to SD cards, plus manifest JSON
-- **Proxmox**: VM templates stored directly in Proxmox, plus manifest JSON
