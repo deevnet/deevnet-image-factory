@@ -1,0 +1,28 @@
+# deevnet-kit - an example unit for your app, run as a container.
+#
+#   sudo deevnet-kit export /opt/my-app      # kit.env + site-ca.pem
+#   sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
+#   (edit IMAGE= below)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now my-app
+#
+# Host networking, and localhost for both services: the container cannot
+# resolve <hostname>.local, and the certificate carries localhost too.
+[Unit]
+Description=My app (container)
+After=mosquitto.service vmauth.service
+Wants=mosquitto.service vmauth.service
+
+[Service]
+Environment=IMAGE=docker.io/library/my-app:latest
+ExecStartPre=-/usr/bin/podman rm -f my-app
+ExecStart=/usr/bin/podman run --rm --name my-app --network host \
+  --env-file /opt/my-app/kit.env \
+  -e MQTT_HOST=localhost -e LOG_ENDPOINT=https://localhost:8427 \
+  -e MQTT_CA_FILE=/kit/site-ca.pem -v /opt/my-app/site-ca.pem:/kit/site-ca.pem:ro \
+  ${IMAGE}
+ExecStop=/usr/bin/podman stop -t 10 my-app
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

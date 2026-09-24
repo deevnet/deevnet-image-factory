@@ -164,6 +164,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: help init validate clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
+.PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
 .PHONY: pve1-env pve2-env pve-env-clean
 .PHONY: proxmox-fedora-pve1 proxmox-fedora-pve2
@@ -187,6 +188,8 @@ help:
 	@echo "  pi-bookworm-image      Build generic Raspberry Pi Bookworm image (autoprov only)"
 	@echo "  pi-sdr                 Build fully baked Raspberry Pi SDR image (base + offline config)"
 	@echo "  pi-pidp11              Build fully baked Raspberry Pi PiDP-11 image (base + simh)"
+	@echo "  pi-backend             Build the take-home tenant backend image (MQTT + logs, no Deevnet access)"
+	@echo "  pi-backend-stage-upstream  Stage the arm64 VictoriaLogs/vmauth releases on the artifact server (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
 	@echo "  proxmox-fedora-pve1    ... on node $(PVE1_NODE), credentials from vault ($(PVE1_HOST))"
 	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE), credentials from vault ($(PVE2_HOST))"
@@ -447,6 +450,180 @@ pi-compress-image-pidp11: $(PI_PIDP11_AUTOPROV_IMG)
 	echo "$(GREEN)→ Compressing image with xz (this may take a few minutes)...$(NC)"
 	sudo xz -f -k -6 -T0 "$(PI_PIDP11_AUTOPROV_IMG)"
 	echo "$(GREEN)✓ Compressed image: $(PI_PIDP11_AUTOPROV_IMG).xz$(NC)"
+
+# ------------------------------------------------------------
+# Pi take-home backend image Build
+# ------------------------------------------------------------
+# A mini Deevnet for a tenant to take home: Mosquitto, VictoriaLogs, vmauth,
+# the log bridge and deevnet-kit, with the same app contract as Deevnet and
+# no Deevnet access (docs/pi-backend.md). Its inputs are arm64 binaries from
+# the artifact server, fetched into build/pi-backend/.
+
+PI_BACKEND_IMAGE_VARIANT := pi-backend
+PI_BACKEND_IMAGE_NAME := raspios-bookworm-$(PI_IMAGE_PLATFORM)-$(PI_BACKEND_IMAGE_VARIANT)
+PI_BACKEND_AUTOPROV_IMG := $(CURDIR)/$(PI_BACKEND_IMAGE_NAME).img
+PI_BACKEND_INPUTS := $(CURDIR)/build/pi-backend
+
+# Deevnet's own builds, staged by each repo's `make stage-pi`.
+PI_BACKEND_DEEVNET_BINARIES := deevnet-kit deevnet-log-user deevnet-log-bridge
+
+# Upstream releases, pinned to the versions Deevnet's log store runs
+# (deevnet.mgmt victorialogs role). The checksums are the release's own.
+PI_BACKEND_VLOGS_VERSION := v1.52.0
+PI_BACKEND_VLOGS_TARBALL := victoria-logs-linux-arm64-$(PI_BACKEND_VLOGS_VERSION).tar.gz
+PI_BACKEND_VLOGS_SHA256  := 91338c3e5e3d743a862c0a8665bf80862f639dbd4de6f6ff19ada7df5e9acf45
+PI_BACKEND_VMUTILS_VERSION := v1.152.0
+PI_BACKEND_VMUTILS_TARBALL := vmutils-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION).tar.gz
+PI_BACKEND_VMUTILS_SHA256  := 57c567b262962a4cb8e35c0c34efe64629a3e1ea69ac0611d8d67e168df8b1e8
+PI_BACKEND_UPSTREAM_PATH := pi-images/victoria
+PI_BACKEND_ARTIFACTS_ROOT ?= /srv/deevnet-http
+
+# Full backend image = inputs + base image + resize + offline config + compress
+pi-backend: pi-backend-inputs pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
+	echo "$(GREEN)✓ Pi backend image complete: $(PI_BACKEND_AUTOPROV_IMG).xz$(NC)"
+
+# One-time, on the Builder: put the upstream arm64 releases where the build
+# fetches them. Pis are outside the artifact role's mirroring, so this is the
+# stage step for them, and it refuses a download whose checksum is wrong.
+pi-backend-stage-upstream:
+	TMP="$$(mktemp -d)"
+	trap 'rm -rf "$$TMP"' EXIT
+	curl -fsSL -o "$$TMP/$(PI_BACKEND_VLOGS_TARBALL)" \
+	  "https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/$(PI_BACKEND_VLOGS_VERSION)/$(PI_BACKEND_VLOGS_TARBALL)"
+	curl -fsSL -o "$$TMP/$(PI_BACKEND_VMUTILS_TARBALL)" \
+	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMUTILS_TARBALL)"
+	cd "$$TMP"
+	printf '%s  %s\n%s  %s\n' \
+	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
+	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" | sha256sum -c -
+	sudo install -d -o nginx -g nginx -m 0755 "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)"
+	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_VLOGS_TARBALL)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
+	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)/"
+	echo "$(GREEN)✓ Staged under $(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)$(NC)"
+
+# Fetch every binary the image installs. Always refetched: "latest" moves.
+pi-backend-inputs:
+	echo "$(YELLOW)→ Fetching pi-backend inputs from artifacts...$(NC)"
+	rm -rf "$(PI_BACKEND_INPUTS)"
+	mkdir -p "$(PI_BACKEND_INPUTS)/tmp"
+	for b in $(PI_BACKEND_DEEVNET_BINARIES); do
+	  curl -fsSL -o "$(PI_BACKEND_INPUTS)/$$b" "$(ARTIFACT_URL)/binaries/$$b/$$b-latest-linux-arm64"
+	  file "$(PI_BACKEND_INPUTS)/$$b" | grep -q 'ARM aarch64' || { echo "$(RED)✗ $$b is not an arm64 binary$(NC)"; exit 1; }
+	done
+	cd "$(PI_BACKEND_INPUTS)/tmp"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VLOGS_TARBALL)"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMUTILS_TARBALL)"
+	printf '%s  %s\n%s  %s\n' \
+	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
+	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" | sha256sum -c -
+	tar -xzf "$(PI_BACKEND_VLOGS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" victoria-logs-prod
+	tar -xzf "$(PI_BACKEND_VMUTILS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmauth-prod
+	rm -rf "$(PI_BACKEND_INPUTS)/tmp"
+	echo "$(GREEN)✓ Inputs ready in $(PI_BACKEND_INPUTS)$(NC)"
+
+# Build base Bookworm image (reuses sdr-bookworm.pkr.hcl). The a_autoprov user
+# it adds is removed again by pi-backend-config.
+pi-bookworm-image-backend: check-loop-devices $(PI_BOOKWORM_IMAGE_ZIP) $(PI_BOOKWORM_SSH_PUBKEY_FILE)
+	echo "$(GREEN)→ Building Pi backend Bookworm image...$(NC)"
+	sudo podman run --rm --privileged --network=host \
+		--security-opt label=disable \
+		-v /dev:/dev \
+		-v "$(CURDIR)":/build:rw \
+		$(PI_PACKER_ARM_CONTAINER) \
+		build \
+		  -var "ssh_pubkey_local_path=/build/$(patsubst $(CURDIR)/%,%,$(PI_BOOKWORM_SSH_PUBKEY_FILE))" \
+		  -var "image_name=$(PI_BACKEND_IMAGE_NAME)" \
+		  packer/pi/sdr-bookworm.pkr.hcl
+	echo "$(GREEN)✓ Base Bookworm image ready: $(PI_BACKEND_AUTOPROV_IMG)$(NC)"
+
+# Resize root partition to fill 8G image
+pi-resize-image-backend: $(PI_BACKEND_AUTOPROV_IMG)
+	echo "$(GREEN)→ Expanding image file to 8G...$(NC)"
+	sudo truncate -s 8G "$(PI_BACKEND_AUTOPROV_IMG)"
+	echo "$(GREEN)→ Resizing root partition to fill image...$(NC)"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(PI_BACKEND_AUTOPROV_IMG)")"
+	trap 'sudo losetup -d "$$LOOPDEV" 2>/dev/null || true' EXIT
+	sudo partprobe "$$LOOPDEV"
+	sudo udevadm settle
+	: "Expand partition 2 to fill available space"
+	sudo growpart "$$LOOPDEV" 2
+	: "Expand ext4 filesystem"
+	sudo e2fsck -f -y "$${LOOPDEV}p2" || true
+	sudo resize2fs "$${LOOPDEV}p2"
+	echo "$(GREEN)✓ Root partition resized to ~7G$(NC)"
+
+# Offline configuration step (Ansible against mounted image)
+pi-backend-config: $(PI_BACKEND_AUTOPROV_IMG)
+	echo "$(GREEN)→ Applying backend config to Bookworm image (offline Ansible)...$(NC)"
+
+	: "Paths based on repo layout"
+	PLAYBOOK="$(CURDIR)/ansible/playbooks/pi-backend-config.yml"
+	INVENTORY="$(CURDIR)/ansible/inventories/local.yml"
+
+	[[ -f "$$PLAYBOOK" ]]  || { echo "$(RED)✗ Missing playbook: $$PLAYBOOK$(NC)"; exit 1; }
+	[[ -f "$$INVENTORY" ]] || { echo "$(RED)✗ Missing inventory: $$INVENTORY$(NC)"; exit 1; }
+	[[ -d "$(PI_BACKEND_INPUTS)" ]] || { echo "$(RED)✗ No inputs: run make pi-backend-inputs$(NC)"; exit 1; }
+
+	: "Pre-clean any leftover mounts from a prior failed run"
+	sudo umount -R "$(PI_BOOKWORM_MNT)" 2>/dev/null || true
+	sudo mkdir -p "$(PI_BOOKWORM_MNT)"
+
+	: "Attach loop device with partition scanning"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(PI_BACKEND_AUTOPROV_IMG)")"
+	echo "$(YELLOW)→ Using $$LOOPDEV$(NC)"
+
+	: "Always clean up mounts + loop device (even if ansible fails)"
+	trap 'sudo umount -R "$(PI_BOOKWORM_MNT)" 2>/dev/null || true; sudo losetup -d "$$LOOPDEV" 2>/dev/null || true' EXIT
+
+	: "Race fix: force kernel/udev to (re)create loop partition nodes"
+	sudo partprobe "$$LOOPDEV" 2>/dev/null || true
+	sudo partx -u "$$LOOPDEV" 2>/dev/null || true
+	sudo udevadm settle || true
+
+	: "Wait briefly for /dev/loopXp1 and /dev/loopXp2 to exist"
+	for i in {1..10}; do
+		if [[ -b "$${LOOPDEV}p1" && -b "$${LOOPDEV}p2" ]]; then break; fi
+		sleep 0.2
+	done
+
+	: "Hard fail if the partition nodes still aren't present"
+	if [[ ! -b "$${LOOPDEV}p1" || ! -b "$${LOOPDEV}p2" ]]; then
+		echo "$(RED)✗ Loop partition nodes not present: $${LOOPDEV}p1 / $${LOOPDEV}p2$(NC)"
+		ls -l "$$LOOPDEV" || true
+		ls -l "$${LOOPDEV}p"* 2>/dev/null || true
+		lsblk "$$LOOPDEV" || true
+		exit 1
+	fi
+
+	: "Mount root + boot"
+	sudo mount "$${LOOPDEV}p2" "$(PI_BOOKWORM_MNT)"
+	sudo mkdir -p "$(PI_BOOKWORM_MNT)/boot"
+	sudo mount "$${LOOPDEV}p1" "$(PI_BOOKWORM_MNT)/boot"
+
+	: "Minimal mounts needed for chroot operations"
+	sudo mount --bind /dev  "$(PI_BOOKWORM_MNT)/dev"
+	sudo mount -t proc proc "$(PI_BOOKWORM_MNT)/proc"
+	sudo mount -t sysfs sys  "$(PI_BOOKWORM_MNT)/sys"
+
+	: "Ensure qemu usermode is present inside the image for any chroot execution"
+	sudo install -m 0755 /usr/bin/qemu-aarch64-static "$(PI_BOOKWORM_MNT)/usr/bin/qemu-aarch64-static"
+
+	: "Run offline Ansible (fails hard on errors)"
+	sudo ansible-playbook \
+	  -i "$$INVENTORY" \
+	  "$$PLAYBOOK" \
+	  --extra-vars "chroot_root=$(PI_BOOKWORM_MNT) pi_backend_inputs=$(PI_BACKEND_INPUTS)"
+
+	: "The emulator is a build tool, not part of the owner's image"
+	sudo rm -f "$(PI_BOOKWORM_MNT)/usr/bin/qemu-aarch64-static"
+
+	echo "$(GREEN)✓ Backend config applied$(NC)"
+
+# Compress backend image for distribution
+pi-compress-image-backend: $(PI_BACKEND_AUTOPROV_IMG)
+	echo "$(GREEN)→ Compressing image with xz (this may take a few minutes)...$(NC)"
+	sudo xz -f -k -6 -T0 "$(PI_BACKEND_AUTOPROV_IMG)"
+	echo "$(GREEN)✓ Compressed image: $(PI_BACKEND_AUTOPROV_IMG).xz$(NC)"
 
 # ------------------------------------------------------------
 # Supporting targets

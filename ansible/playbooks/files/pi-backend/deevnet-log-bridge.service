@@ -1,0 +1,17 @@
+# deevnet-kit - carries <tenant>/log/<device> from the broker into the
+# tenant's device partition, (index, 2). The same binary as on Deevnet.
+[Unit]
+Description=deevnet-log-bridge, device logs from MQTT to the log store (deevnet-kit)
+ConditionPathExists=/etc/deevnet-kit/log-bridge.env
+After=deevnet-kit-firstboot.service mosquitto.service vmauth.service
+Wants=mosquitto.service vmauth.service
+
+[Service]
+DynamicUser=yes
+EnvironmentFile=/etc/deevnet-kit/log-bridge.env
+ExecStart=/usr/local/bin/deevnet-log-bridge
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

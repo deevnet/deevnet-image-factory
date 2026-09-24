@@ -1,0 +1,21 @@
+# deevnet-kit - first boot. Runs once: kit.json's existence is what says it ran.
+# It chooses the tenant, makes this card's CA, certificate and tokens, and
+# writes the broker's and the log store's configuration.
+#
+# Pi Imager's own first boot (user, Wi-Fi, hostname) runs in a separate boot
+# before this one, so the certificate carries the hostname the owner chose.
+[Unit]
+Description=deevnet-kit first boot (tenant, CA, tokens)
+ConditionPathExists=!/etc/deevnet-kit/kit.json
+# Online first, so the certificate names the address devices will dial.
+Wants=network-online.target
+After=local-fs.target network-online.target
+Before=mosquitto.service vmauth.service deevnet-log-bridge.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/deevnet-kit init --config /boot/firmware/deevnet-kit.txt
+
+[Install]
+WantedBy=multi-user.target
