@@ -1,0 +1,50 @@
+# deevnet-kit - Grafana, with Deevnet's settings (ADR-0024, CHG-0024): HTTPS on
+# 3000 with the card's certificate, no sign-up, no anonymous access, no
+# Grafana alerting, and nothing fetched from the internet. The admin password
+# and secret key are the card's own, in grafana.env, written by first boot.
+#
+# auto_assign_org stays ON: Grafana 13 honours the organisation deevnet-kit
+# names for the tenant's login only while it is (verified on 13.2.2).
+[Unit]
+Description=Grafana, the tenant's dashboards (deevnet-kit)
+ConditionPathExists=/etc/deevnet-kit/kit.json
+Wants=network-online.target
+After=deevnet-kit-firstboot.service network-online.target
+
+[Service]
+User=grafana
+Group=grafana
+SupplementaryGroups=deevnet-kit
+WorkingDirectory=/opt/grafana
+EnvironmentFile=/etc/deevnet-kit/grafana.env
+Environment=GF_PATHS_DATA=/var/lib/grafana
+Environment=GF_PATHS_LOGS=/var/log/grafana
+Environment=GF_PATHS_PLUGINS=/var/lib/grafana-plugins
+Environment=GF_PATHS_PROVISIONING=/opt/grafana/conf/provisioning
+Environment=GF_SERVER_PROTOCOL=https
+Environment=GF_SERVER_HTTP_PORT=3000
+Environment=GF_SERVER_CERT_FILE=/etc/deevnet-kit/tls/server.pem
+Environment=GF_SERVER_CERT_KEY=/etc/deevnet-kit/tls/server-key.pem
+Environment=GF_SECURITY_COOKIE_SECURE=true
+Environment=GF_SECURITY_DISABLE_GRAVATAR=true
+Environment=GF_USERS_ALLOW_SIGN_UP=false
+Environment=GF_USERS_ALLOW_ORG_CREATE=false
+Environment=GF_USERS_AUTO_ASSIGN_ORG=true
+Environment=GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+Environment=GF_AUTH_ANONYMOUS_ENABLED=false
+Environment=GF_UNIFIED_ALERTING_ENABLED=false
+Environment=GF_PLUGINS_PREINSTALL_DISABLED=true
+Environment=GF_ANALYTICS_REPORTING_ENABLED=false
+Environment=GF_ANALYTICS_CHECK_FOR_UPDATES=false
+Environment=GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+Environment=GF_NEWS_NEWS_FEED_ENABLED=false
+Environment=GF_SNAPSHOTS_EXTERNAL_ENABLED=false
+ExecStart=/opt/grafana/bin/grafana server --homepath=/opt/grafana
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=10000
+# A first start migrates an empty database; on a Pi 3 that takes a while.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

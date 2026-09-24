@@ -1,0 +1,18 @@
+# deevnet-kit - the tenant's Grafana organisation, login and log data sources,
+# written by the same code as the Deevnet API's, so their UIDs match and a
+# dashboard moves unchanged. Every boot: it is idempotent, and it puts back
+# anything changed by hand.
+[Unit]
+Description=deevnet-kit dashboards (the tenant's Grafana organisation)
+ConditionPathExists=/etc/deevnet-kit/kit.json
+Wants=grafana.service vmauth.service
+After=grafana.service vmauth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/deevnet-kit dashboards
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

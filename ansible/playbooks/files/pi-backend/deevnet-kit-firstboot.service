@@ -10,7 +10,7 @@ ConditionPathExists=!/etc/deevnet-kit/kit.json
 # Online first, so the certificate names the address devices will dial.
 Wants=network-online.target
 After=local-fs.target network-online.target
-Before=mosquitto.service vmauth.service deevnet-log-bridge.service
+Before=mosquitto.service vmauth.service deevnet-log-bridge.service grafana.service
 
 [Service]
 Type=oneshot
