@@ -11,6 +11,8 @@
 #   victorialogs         the log store, loopback only
 #   vmauth               the log store's front door, users rendered by deevnet-log-user
 #   deevnet-log-bridge   <tenant>/log/<device> -> the tenant's device partition
+#   grafana              the tenant's dashboards on 3000, organisation and data
+#                        sources written by `deevnet-kit dashboards` (CHG-0024)
 #   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
 #   podman               for the tenant's own app
 #
@@ -55,6 +57,15 @@
       - victorialogs.service
       - vmauth.service
       - deevnet-log-bridge.service
+      - grafana.service
+      - deevnet-kit-dashboards.service
+
+    # Grafana and its VictoriaLogs plugin: the release tarball and the plugin
+    # zip, checksum-verified by the Makefile before this play runs. The same
+    # Grafana and plugin versions as Deevnet's (deevnet.mgmt grafana role).
+    pi_backend_grafana_tarball: "{{ pi_backend_inputs }}/grafana.tar.gz"
+    pi_backend_grafana_plugin_zip: "{{ pi_backend_inputs }}/grafana-plugin.zip"
+    pi_backend_grafana_plugin_id: victoriametrics-logs-datasource
 
   pre_tasks:
     - name: Assert chroot_root and pi_backend_inputs provided
@@ -78,6 +89,23 @@
         that:
           - osrel.stat.exists
         fail_msg: "No /etc/os-release at {{ chroot_root }} — is the image mounted?"
+
+    - name: Check the Grafana inputs are present
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ pi_backend_grafana_tarball }}"
+        - "{{ pi_backend_grafana_plugin_zip }}"
+      register: pi_backend_grafana_inputs
+
+    - name: Fail if a Grafana input is missing
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Missing {{ item.item }} — run make pi-backend-inputs"
+        quiet: true
+      loop: "{{ pi_backend_grafana_inputs.results }}"
+      loop_control:
+        label: "{{ item.item | basename }}"
 
     - name: Check every staged binary is present
       ansible.builtin.stat:
@@ -152,12 +180,22 @@
       changed_when: pi_backend_useradd.rc == 0
       failed_when: pi_backend_useradd.rc not in [0, 9]  # 9 = exists
 
-    - name: Let mosquitto and the log store read the TLS key
+    - name: Create Grafana's user
+      ansible.builtin.command:
+        cmd: >-
+          chroot {{ chroot_root }} useradd --system --user-group --no-create-home
+          --home-dir /var/lib/grafana --shell /usr/sbin/nologin grafana
+      register: pi_backend_useradd_grafana
+      changed_when: pi_backend_useradd_grafana.rc == 0
+      failed_when: pi_backend_useradd_grafana.rc not in [0, 9]  # 9 = exists
+
+    - name: Let mosquitto, the log store and Grafana read the TLS key
       ansible.builtin.command:
         cmd: "chroot {{ chroot_root }} usermod -aG deevnet-kit {{ item }}"
       loop:
         - mosquitto
         - victoria
+        - grafana
       changed_when: true
 
     # ------------------------------------------------------------
@@ -171,6 +209,54 @@
         owner: root
         group: root
       loop: "{{ pi_backend_binaries }}"
+
+    # ------------------------------------------------------------
+    # Grafana (CHG-0024)
+    # ------------------------------------------------------------
+    # Unpacked on the build host rather than in the chroot: tar and Python run
+    # natively, and nothing here needs to execute arm64 code.
+    - name: Create Grafana's directories
+      ansible.builtin.file:
+        path: "{{ chroot_root }}{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+        owner: root
+        group: root
+      loop:
+        - {path: /opt/grafana, mode: "0755"}
+        - {path: /var/lib/grafana-plugins, mode: "0755"}
+
+    - name: Unpack Grafana into /opt/grafana
+      ansible.builtin.command:
+        argv: [tar, -xzf, "{{ pi_backend_grafana_tarball }}", -C, "{{ chroot_root }}/opt/grafana",
+               --strip-components=1, --no-same-owner]
+      changed_when: true
+
+    # Root-owned and not writable by Grafana: the service loads this code and
+    # cannot change it. zipfile does not restore modes, so the backend
+    # binaries are made executable here. Every platform's backend is kept:
+    # the signed manifest lists them all, and a missing file fails the
+    # signature check.
+    - name: Unpack the VictoriaLogs data source plugin
+      ansible.builtin.command:
+        argv: [python3, -m, zipfile, -e, "{{ pi_backend_grafana_plugin_zip }}", "{{ chroot_root }}/var/lib/grafana-plugins"]
+      changed_when: true
+
+    - name: Make the plugin readable, and its backends executable
+      ansible.builtin.shell: |
+        set -eu
+        d={{ (chroot_root ~ '/var/lib/grafana-plugins/' ~ pi_backend_grafana_plugin_id) | quote }}
+        chown -R root:root "$d"
+        find "$d" -type d -exec chmod 0755 {} +
+        find "$d" -type f -exec chmod 0644 {} +
+        find "$d" -type f -name 'victoriametrics_logs_backend_plugin_*' -exec chmod 0755 {} +
+      changed_when: true
+
+    # Grafana writes its database and logs here, and nowhere else.
+    - name: Create Grafana's data and log directories
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} install -d -o grafana -g grafana -m 0750 /var/lib/grafana /var/log/grafana"
+      changed_when: true
 
     # ------------------------------------------------------------
     # Configuration
@@ -204,6 +290,8 @@
         - {src: victorialogs.service, dest: /etc/systemd/system/victorialogs.service}
         - {src: vmauth.service, dest: /etc/systemd/system/vmauth.service}
         - {src: deevnet-log-bridge.service, dest: /etc/systemd/system/deevnet-log-bridge.service}
+        - {src: grafana.service, dest: /etc/systemd/system/grafana.service}
+        - {src: deevnet-kit-dashboards.service, dest: /etc/systemd/system/deevnet-kit-dashboards.service}
 
     # The boot partition is FAT, so the owner can set the tenant from any
     # laptop after flashing. The partition is mounted at /boot here and at

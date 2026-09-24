@@ -476,6 +476,18 @@ PI_BACKEND_VMUTILS_VERSION := v1.152.0
 PI_BACKEND_VMUTILS_TARBALL := vmutils-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION).tar.gz
 PI_BACKEND_VMUTILS_SHA256  := 57c567b262962a4cb8e35c0c34efe64629a3e1ea69ac0611d8d67e168df8b1e8
 PI_BACKEND_UPSTREAM_PATH := pi-images/victoria
+# Grafana and its VictoriaLogs plugin, the versions Deevnet runs (deevnet.mgmt
+# grafana role, CHG-0024). Grafana's checksum is the one it publishes; the
+# plugin zip is the one the Builder already mirrors for Deevnet (deevnet.builder
+# artifacts, fetched-artifacts), whose sha256 inventory pins. One zip carries
+# every platform's backend.
+PI_BACKEND_GRAFANA_VERSION := 13.2.2
+PI_BACKEND_GRAFANA_TARBALL := grafana_13.2.2_34846740809_linux_arm64.tar.gz
+PI_BACKEND_GRAFANA_SHA256  := 7268f9a576f919f14e6263b344a85b6ac8d768fbda247910c43ce4e12c747a72
+PI_BACKEND_GRAFANA_URL     := https://dl.grafana.com/grafana/release/$(PI_BACKEND_GRAFANA_VERSION)/$(PI_BACKEND_GRAFANA_TARBALL)
+PI_BACKEND_GRAFANA_PATH    := pi-images/grafana
+PI_BACKEND_GRAFANA_PLUGIN  := grafana-plugins/victoriametrics-logs-datasource-v0.32.0.zip
+PI_BACKEND_GRAFANA_PLUGIN_SHA256 := 8204d097b17f53b1c3a71761047734b7980bd983710c6cfcef8d938abe5eeef0
 PI_BACKEND_ARTIFACTS_ROOT ?= /srv/deevnet-http
 
 # Full backend image = inputs + base image + resize + offline config + compress
@@ -492,14 +504,19 @@ pi-backend-stage-upstream:
 	  "https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/$(PI_BACKEND_VLOGS_VERSION)/$(PI_BACKEND_VLOGS_TARBALL)"
 	curl -fsSL -o "$$TMP/$(PI_BACKEND_VMUTILS_TARBALL)" \
 	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMUTILS_TARBALL)"
+	curl -fsSL -o "$$TMP/$(PI_BACKEND_GRAFANA_TARBALL)" "$(PI_BACKEND_GRAFANA_URL)"
 	cd "$$TMP"
-	printf '%s  %s\n%s  %s\n' \
+	printf '%s  %s\n%s  %s\n%s  %s\n' \
 	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
-	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" | sha256sum -c -
-	sudo install -d -o nginx -g nginx -m 0755 "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)"
+	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
+	  "$(PI_BACKEND_GRAFANA_SHA256)" "$(PI_BACKEND_GRAFANA_TARBALL)" | sha256sum -c -
+	sudo install -d -o nginx -g nginx -m 0755 "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)" \
+	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)"
 	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_VLOGS_TARBALL)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
 	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)/"
-	echo "$(GREEN)✓ Staged under $(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)$(NC)"
+	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_GRAFANA_TARBALL)" \
+	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)/"
+	echo "$(GREEN)✓ Staged under $(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH) and $(PI_BACKEND_GRAFANA_PATH)$(NC)"
 
 # Fetch every binary the image installs. Always refetched: "latest" moves.
 pi-backend-inputs:
@@ -518,6 +535,12 @@ pi-backend-inputs:
 	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" | sha256sum -c -
 	tar -xzf "$(PI_BACKEND_VLOGS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" victoria-logs-prod
 	tar -xzf "$(PI_BACKEND_VMUTILS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmauth-prod
+	: "Grafana and its plugin stay packed; the config play unpacks them into the image"
+	curl -fsSL -o "$(PI_BACKEND_INPUTS)/grafana.tar.gz" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PATH)/$(PI_BACKEND_GRAFANA_TARBALL)"
+	curl -fsSL -o "$(PI_BACKEND_INPUTS)/grafana-plugin.zip" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PLUGIN)"
+	printf '%s  %s\n%s  %s\n' \
+	  "$(PI_BACKEND_GRAFANA_SHA256)" "$(PI_BACKEND_INPUTS)/grafana.tar.gz" \
+	  "$(PI_BACKEND_GRAFANA_PLUGIN_SHA256)" "$(PI_BACKEND_INPUTS)/grafana-plugin.zip" | sha256sum -c -
 	rm -rf "$(PI_BACKEND_INPUTS)/tmp"
 	echo "$(GREEN)✓ Inputs ready in $(PI_BACKEND_INPUTS)$(NC)"
 
