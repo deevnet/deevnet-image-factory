@@ -164,7 +164,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: help init validate clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
-.PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
+.PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-backend-publish pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
 .PHONY: pve1-env pve2-env pve-env-clean
 .PHONY: proxmox-fedora-pve1 proxmox-fedora-pve2
@@ -190,6 +190,7 @@ help:
 	@echo "  pi-pidp11              Build fully baked Raspberry Pi PiDP-11 image (base + simh)"
 	@echo "  pi-backend             Build the take-home tenant backend image (MQTT + logs, no Deevnet access)"
 	@echo "  pi-backend-stage-upstream  Stage the arm64 VictoriaLogs/vmauth releases on the artifact server (sudo)"
+	@echo "  pi-backend-publish     Publish the built .img.xz to the tenant downloads tree (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
 	@echo "  proxmox-fedora-pve1    ... on node $(PVE1_NODE), credentials from vault ($(PVE1_HOST))"
 	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE), credentials from vault ($(PVE2_HOST))"
@@ -517,6 +518,18 @@ pi-backend-stage-upstream:
 	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_GRAFANA_TARBALL)" \
 	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)/"
 	echo "$(GREEN)✓ Staged under $(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH) and $(PI_BACKEND_GRAFANA_PATH)$(NC)"
+
+# Publish the finished image to the tenant downloads tree (CHG-0025), which the
+# observability store serves to DVNTM-TD, so a meetup flashes cards from the
+# site rather than the library's internet. Publishes what is here: run
+# `make pi-backend` first.
+pi-backend-publish:
+	[[ -f "$(PI_BACKEND_AUTOPROV_IMG).xz" ]] || { echo "$(RED)✗ No $(PI_BACKEND_AUTOPROV_IMG).xz: run make pi-backend$(NC)"; exit 1; }
+	DEST="$(PI_BACKEND_ARTIFACTS_ROOT)/tenant/pi"
+	sudo install -d -o nginx -g nginx -m 0755 "$$DEST"
+	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_AUTOPROV_IMG).xz" "$$DEST/"
+	cd "$$DEST" && sha256sum "$(PI_BACKEND_IMAGE_NAME).img.xz" | sudo tee "$(PI_BACKEND_IMAGE_NAME).img.xz.sha256" >/dev/null
+	echo "$(GREEN)✓ Published $$DEST/$(PI_BACKEND_IMAGE_NAME).img.xz$(NC)"
 
 # Fetch every binary the image installs. Always refetched: "latest" moves.
 pi-backend-inputs:
