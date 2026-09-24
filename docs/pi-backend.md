@@ -85,6 +85,29 @@ Output: `raspios-bookworm-mobile-pi-backend.img.xz`.
 4. `sudo deevnet-kit status`, then `sudo deevnet-kit export ~/deevnet-kit` for `kit.env` and
    `site-ca.pem`.
 
+`README.txt` sits beside `deevnet-kit.txt` on the boot partition, so the owner can read the
+instructions on a laptop before the first boot, and again at `/opt/deevnet-kit/README.txt`. The
+login message (`/etc/motd`) points there.
+
+## Self-Test
+
+`sudo deevnet-kit selftest` proves the card end to end, as an app and a device use it:
+1. the six services;
+2. TLS on 8883, 8427 and 3000 against the card's CA;
+3. the bridge's subscription;
+4. a device log line published over MQTT through a throwaway account, read back from `<index>-2`;
+5. an app line sent with the ingest token, read back from `<index>-0`;
+6. as the tenant's Grafana login: Editor in one organisation, the three data sources, the starter
+   dashboard, and the device line read back through Grafana.
+
+`deevnet-kit-selftest.service` runs it after every boot; `deevnet-kit status` shows the last
+result, and a failure is also a failed unit. Each run leaves two log lines marked
+`deevnet-kit selftest`, which age out with retention.
+
+`deevnet-kit dashboards` also creates a **"Start here"** dashboard (temperature from device logs,
+device logs, app logs) when none has its UID. It never overwrites it: once created, it is the
+owner's.
+
 ## Where Things Live on the Card
 
 | Path | What |
@@ -98,6 +121,8 @@ Output: `raspios-bookworm-mobile-pi-backend.img.xz`.
 | `/etc/deevnet-kit/grafana.env` | Grafana's admin password and secret key (root, 0600) |
 | `/opt/grafana`, `/var/lib/grafana-plugins` | Grafana and the plugin, root-owned and read-only to the service |
 | `/var/lib/grafana` | Grafana's database |
+| `/var/lib/deevnet-kit/selftest.json` | the last self-test's result |
+| `/boot/firmware/README.txt`, `/opt/deevnet-kit/README.txt` | the owner's instructions |
 | `/opt/deevnet-kit/examples/my-app.service` | a unit that runs the tenant's app container |
 
 ## Memory

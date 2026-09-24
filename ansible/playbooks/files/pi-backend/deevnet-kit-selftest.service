@@ -1,0 +1,18 @@
+# deevnet-kit - prove the card end to end on every boot: TLS on all three
+# ports, a device log over MQTT, an app log, and both read back through
+# Grafana as the tenant. The result shows in `deevnet-kit status`; a failure
+# also shows as a failed unit. Run it again by hand: sudo deevnet-kit selftest
+[Unit]
+Description=deevnet-kit selftest (the card, end to end)
+ConditionPathExists=/etc/deevnet-kit/kit.json
+Wants=deevnet-kit-dashboards.service
+After=deevnet-kit-dashboards.service mosquitto.service vmauth.service deevnet-log-bridge.service grafana.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/deevnet-kit selftest
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

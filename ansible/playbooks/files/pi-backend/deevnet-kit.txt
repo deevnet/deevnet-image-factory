@@ -5,5 +5,7 @@
 #   terraform output   (or the tenant's page in the Deevnet docs)
 #
 # Left empty, the tenant is "pi" and the index is 1.
+#
+# Instructions: README.txt, next to this file.
 tenant=
 index=
