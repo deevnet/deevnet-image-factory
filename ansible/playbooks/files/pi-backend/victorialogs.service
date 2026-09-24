@@ -1,0 +1,21 @@
+# deevnet-kit - the log store. LOOPBACK ONLY: it writes and reads any
+# partition for whoever names one in a header, so nothing reaches it except
+# through vmauth, as on Deevnet (ADR-0022 §3).
+[Unit]
+Description=VictoriaLogs, the log store (deevnet-kit)
+After=network.target
+
+[Service]
+User=victoria
+Group=victoria
+StateDirectory=victoria-logs
+ExecStart=/usr/local/bin/victoria-logs-prod \
+  -httpListenAddr=127.0.0.1:9428 \
+  -storageDataPath=/var/lib/victoria-logs \
+  -retentionPeriod=30d \
+  -retention.maxDiskUsagePercent=80
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

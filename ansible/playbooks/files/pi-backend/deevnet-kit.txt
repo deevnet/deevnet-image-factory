@@ -1,0 +1,9 @@
+# deevnet-kit - read ONCE, on the first boot after flashing.
+#
+# Set these to your Deevnet tenant's name and index, and your app's topics
+# and log partition header come across unchanged. Find both with:
+#   terraform output   (or the tenant's page in the Deevnet docs)
+#
+# Left empty, the tenant is "pi" and the index is 1.
+tenant=
+index=

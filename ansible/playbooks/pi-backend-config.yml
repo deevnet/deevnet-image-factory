@@ -1,0 +1,264 @@
+---
+# Raspberry Pi take-home backend image (OFFLINE)
+#
+# A mini Deevnet on an SD card. A tenant prototypes on Deevnet at a meetup,
+# then flashes this image onto its own card and moves its app across: the Pi
+# keeps the same app contract (MQTT over TLS on 8883 with the tenant's topic
+# prefix and the reserved log level, the log store's tokens and partition
+# selector on 8427) with no Deevnet API, no Terraform and no Deevnet access.
+#
+#   mosquitto            the broker (TLS only), accounts via `deevnet-kit account`
+#   victorialogs         the log store, loopback only
+#   vmauth               the log store's front door, users rendered by deevnet-log-user
+#   deevnet-log-bridge   <tenant>/log/<device> -> the tenant's device partition
+#   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
+#   podman               for the tenant's own app
+#
+# NOTHING SECRET IS BAKED IN. The CA, certificates, tokens and passwords are
+# made on the card at first boot, so two cards share nothing. And NOTHING OF
+# DEEVNET'S STAYS: the a_autoprov user the shared Packer step adds is removed
+# at the end of this play. The card belongs to whoever flashed it.
+#
+# Usage (from Makefile):
+#   sudo ansible-playbook -i ansible/inventories/local.yml ansible/playbooks/pi-backend-config.yml \
+#     --extra-vars "chroot_root=/mnt/pi-bookworm-image pi_backend_inputs=/path/to/build/pi-backend"
+
+- name: Configure Pi take-home backend image (offline)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars:
+    # REQUIRED: passed in from Makefile
+    chroot_root: "{{ chroot_root | default(omit) }}"
+    pi_backend_inputs: "{{ pi_backend_inputs | default(omit) }}"
+
+    image_name: "pi-backend-bookworm"
+
+    # Staged by the Makefile from the artifact server.
+    pi_backend_binaries:
+      - deevnet-kit
+      - deevnet-log-user
+      - deevnet-log-bridge
+      - victoria-logs-prod
+      - vmauth-prod
+
+    pi_backend_packages:
+      - mosquitto
+      - mosquitto-clients
+      - podman
+      - avahi-daemon
+
+    pi_backend_units:
+      - deevnet-kit-firstboot.service
+      - victorialogs.service
+      - vmauth.service
+      - deevnet-log-bridge.service
+
+  pre_tasks:
+    - name: Assert chroot_root and pi_backend_inputs provided
+      ansible.builtin.assert:
+        that:
+          - chroot_root is defined
+          - chroot_root | length > 1
+          - pi_backend_inputs is defined
+          - pi_backend_inputs | length > 1
+        fail_msg: >
+          chroot_root and pi_backend_inputs must be set
+          (e.g. --extra-vars "chroot_root=/mnt/pi-bookworm-image pi_backend_inputs=$PWD/build/pi-backend")
+
+    - name: Assert we look like a mounted rootfs
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/etc/os-release"
+      register: osrel
+
+    - name: Fail if mounted rootfs not found
+      ansible.builtin.assert:
+        that:
+          - osrel.stat.exists
+        fail_msg: "No /etc/os-release at {{ chroot_root }} — is the image mounted?"
+
+    - name: Check every staged binary is present
+      ansible.builtin.stat:
+        path: "{{ pi_backend_inputs }}/{{ item }}"
+      loop: "{{ pi_backend_binaries }}"
+      register: pi_backend_binary_stat
+
+    - name: Fail if a staged binary is missing
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "Missing {{ item.item }} in {{ pi_backend_inputs }} — run make pi-backend-inputs"
+        quiet: true
+      loop: "{{ pi_backend_binary_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+  tasks:
+    - name: Create marker file to verify provisioning
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/packer-provisioned"
+        content: |
+          Image: {{ image_name }}
+          Build Date: {{ ansible_date_time.iso8601 }}
+          Ansible Version: {{ ansible_version.full }}
+        mode: "0644"
+        owner: root
+        group: root
+
+    # ------------------------------------------------------------
+    # Packages (chroot)
+    # ------------------------------------------------------------
+    # Installing mosquitto in a chroot does not start it (invoke-rc.d sees no
+    # running systemd), and it enables its unit; the drop-in below holds it
+    # back until first boot has written its configuration.
+    - name: Update apt cache inside chroot
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get update"
+      changed_when: true
+
+    - name: Install broker, container runtime and mDNS inside chroot
+      ansible.builtin.command:
+        cmd: >-
+          chroot {{ chroot_root }} /usr/bin/apt-get install -y
+          {{ pi_backend_packages | join(' ') }}
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      changed_when: true
+
+    - name: Clean apt cache inside chroot
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get clean"
+      changed_when: true
+
+    # ------------------------------------------------------------
+    # Service users
+    # ------------------------------------------------------------
+    # deevnet-kit is the group that may read the server's TLS key; mosquitto
+    # and vmauth's user are its only members.
+    - name: Create the TLS key group
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} groupadd --system deevnet-kit"
+      register: pi_backend_groupadd
+      changed_when: pi_backend_groupadd.rc == 0
+      failed_when: pi_backend_groupadd.rc not in [0, 9]  # 9 = exists
+
+    - name: Create the log store's user
+      ansible.builtin.command:
+        cmd: >-
+          chroot {{ chroot_root }} useradd --system --user-group --no-create-home
+          --home-dir /var/lib/victoria-logs --shell /usr/sbin/nologin victoria
+      register: pi_backend_useradd
+      changed_when: pi_backend_useradd.rc == 0
+      failed_when: pi_backend_useradd.rc not in [0, 9]  # 9 = exists
+
+    - name: Let mosquitto and the log store read the TLS key
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} usermod -aG deevnet-kit {{ item }}"
+      loop:
+        - mosquitto
+        - victoria
+      changed_when: true
+
+    # ------------------------------------------------------------
+    # Binaries
+    # ------------------------------------------------------------
+    - name: Install the staged binaries
+      ansible.builtin.copy:
+        src: "{{ pi_backend_inputs }}/{{ item }}"
+        dest: "{{ chroot_root }}/usr/local/bin/{{ item }}"
+        mode: "0755"
+        owner: root
+        group: root
+      loop: "{{ pi_backend_binaries }}"
+
+    # ------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------
+    - name: Create configuration directories
+      ansible.builtin.file:
+        path: "{{ chroot_root }}{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+      loop:
+        - /etc/deevnet
+        - /etc/mosquitto/conf.d
+        - /etc/systemd/system/mosquitto.service.d
+        - /opt/deevnet-kit/examples
+
+    - name: Install configuration files
+      ansible.builtin.copy:
+        src: "files/pi-backend/{{ item.src }}"
+        dest: "{{ chroot_root }}{{ item.dest }}"
+        mode: "0644"
+        owner: root
+        group: root
+      loop:
+        - {src: mosquitto-deevnet-kit.conf, dest: /etc/mosquitto/conf.d/deevnet-kit.conf}
+        - {src: mosquitto-override.conf, dest: /etc/systemd/system/mosquitto.service.d/deevnet-kit.conf}
+        - {src: log-user.json, dest: /etc/deevnet/log-user.json}
+        - {src: my-app.service, dest: /opt/deevnet-kit/examples/my-app.service}
+        - {src: deevnet-kit-firstboot.service, dest: /etc/systemd/system/deevnet-kit-firstboot.service}
+        - {src: victorialogs.service, dest: /etc/systemd/system/victorialogs.service}
+        - {src: vmauth.service, dest: /etc/systemd/system/vmauth.service}
+        - {src: deevnet-log-bridge.service, dest: /etc/systemd/system/deevnet-log-bridge.service}
+
+    # The boot partition is FAT, so the owner can set the tenant from any
+    # laptop after flashing. The partition is mounted at /boot here and at
+    # /boot/firmware when the Pi runs.
+    - name: Put the tenant settings on the boot partition
+      ansible.builtin.copy:
+        src: files/pi-backend/deevnet-kit.txt
+        dest: "{{ chroot_root }}/boot/deevnet-kit.txt"
+        mode: "0644"
+
+    - name: Enable the services
+      ansible.builtin.file:
+        src: "/etc/systemd/system/{{ item }}"
+        dest: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/{{ item }}"
+        state: link
+        force: true
+      loop: "{{ pi_backend_units }}"
+
+    - name: Check mosquitto is enabled by its package
+      ansible.builtin.stat:
+        path: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/mosquitto.service"
+      register: pi_backend_mosquitto_enabled
+
+    - name: Fail if mosquitto is not enabled
+      ansible.builtin.assert:
+        that: pi_backend_mosquitto_enabled.stat.exists
+        fail_msg: "mosquitto.service was not enabled by its package; the broker would not start"
+
+    # ------------------------------------------------------------
+    # Hand-off: nothing of Deevnet's stays on the card
+    # ------------------------------------------------------------
+    # Last, so nothing above depends on the user. Pi Imager's OS
+    # customisation creates the owner's own login on first boot.
+    - name: Remove the automation user and its home
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} userdel --remove a_autoprov"
+      register: pi_backend_userdel
+      changed_when: pi_backend_userdel.rc == 0
+      failed_when: pi_backend_userdel.rc not in [0, 6]  # 6 = no such user
+
+    - name: Remove the automation user's sudo rule
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/etc/sudoers.d/010_a_autoprov-nopasswd"
+        state: absent
+
+    - name: Look for anything of the automation user's left behind
+      ansible.builtin.shell:
+        cmd: >-
+          grep -l a_autoprov {{ chroot_root }}/etc/passwd {{ chroot_root }}/etc/shadow
+          {{ chroot_root }}/etc/group {{ chroot_root }}/etc/sudoers.d/* 2>/dev/null;
+          ls -d {{ chroot_root }}/home/a_autoprov 2>/dev/null; true
+      register: pi_backend_leftovers
+      changed_when: false
+
+    - name: Fail if the automation user is still on the card
+      ansible.builtin.assert:
+        that: pi_backend_leftovers.stdout | length == 0
+        fail_msg: "a_autoprov is still in the image: {{ pi_backend_leftovers.stdout_lines }}"

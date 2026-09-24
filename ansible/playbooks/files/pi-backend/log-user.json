@@ -1,0 +1,8 @@
+{
+  "_comment": "deevnet-kit - where deevnet-log-user reads the store's users and writes vmauth's configuration",
+  "base": "/etc/deevnet-kit/log/base.json",
+  "users_dir": "/etc/deevnet-kit/log/users.d",
+  "auth_file": "/etc/deevnet-kit/log/auth/auth.yml",
+  "reload_url": "http://127.0.0.1:8426/-/reload",
+  "timeout_seconds": 10
+}

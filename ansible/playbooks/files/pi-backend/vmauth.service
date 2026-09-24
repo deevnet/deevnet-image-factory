@@ -1,0 +1,26 @@
+# deevnet-kit - the log store's front door, with Deevnet's listeners: TLS on
+# 8427 for everyone, the internal routes (reload, metrics) on loopback only.
+# Its users are rendered by deevnet-log-user from deevnet-kit's state.
+[Unit]
+Description=vmauth, the authenticating proxy in front of the log store (deevnet-kit)
+ConditionPathExists=/etc/deevnet-kit/kit.json
+After=deevnet-kit-firstboot.service victorialogs.service
+Wants=victorialogs.service
+
+[Service]
+User=victoria
+Group=victoria
+SupplementaryGroups=deevnet-kit
+ExecStart=/usr/local/bin/vmauth-prod \
+  -auth.config=/etc/deevnet-kit/log/auth/auth.yml \
+  -configCheckInterval=30s \
+  -httpListenAddr=0.0.0.0:8427, \
+  -httpInternalListenAddr=,127.0.0.1:8426 \
+  -tls=true,false \
+  -tlsCertFile=/etc/deevnet-kit/tls/server.pem \
+  -tlsKeyFile=/etc/deevnet-kit/tls/server-key.pem
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

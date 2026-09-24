@@ -10,6 +10,11 @@ Base images are sourced from the local nginx artifact server (or remote), provis
 with the automation user, and emitted as `.img` files for Raspberry Pi or VM templates
 for Proxmox, each with a manifest JSON.
 
+**The exception is `pi-backend`** (`docs/pi-backend.md`): a take-home image for a tenant's own Pi.
+It is built on the same Packer step, then `pi-backend-config.yml` **removes** `a_autoprov` and fails
+the build if any trace remains. Nothing secret is baked in; `deevnet-kit init` makes the card's CA
+and tokens on first boot. Don't add Deevnet access to it.
+
 ### Platform-Specific Details
 
 **Raspberry Pi (ARM)**:
