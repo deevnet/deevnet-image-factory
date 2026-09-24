@@ -59,6 +59,7 @@
       - deevnet-log-bridge.service
       - grafana.service
       - deevnet-kit-dashboards.service
+      - deevnet-kit-selftest.service
 
     # Grafana and its VictoriaLogs plugin: the release tarball and the plugin
     # zip, checksum-verified by the Makefile before this play runs. The same
@@ -292,6 +293,11 @@
         - {src: deevnet-log-bridge.service, dest: /etc/systemd/system/deevnet-log-bridge.service}
         - {src: grafana.service, dest: /etc/systemd/system/grafana.service}
         - {src: deevnet-kit-dashboards.service, dest: /etc/systemd/system/deevnet-kit-dashboards.service}
+        - {src: deevnet-kit-selftest.service, dest: /etc/systemd/system/deevnet-kit-selftest.service}
+        - {src: README.txt, dest: /opt/deevnet-kit/README.txt}
+        # Replaces Debian's licence notice: the first thing the owner sees on
+        # login is where to start.
+        - {src: motd, dest: /etc/motd}
 
     # The boot partition is FAT, so the owner can set the tenant from any
     # laptop after flashing. The partition is mounted at /boot here and at
@@ -300,6 +306,15 @@
       ansible.builtin.copy:
         src: files/pi-backend/deevnet-kit.txt
         dest: "{{ chroot_root }}/boot/deevnet-kit.txt"
+        mode: "0644"
+
+    # Beside deevnet-kit.txt, so the instructions are readable from any laptop
+    # the moment the card is flashed - the owner edits that file before the
+    # first boot, and this says what to put in it. Also in /opt/deevnet-kit.
+    - name: Put the instructions on the boot partition
+      ansible.builtin.copy:
+        src: files/pi-backend/README.txt
+        dest: "{{ chroot_root }}/boot/README.txt"
         mode: "0644"
 
     - name: Enable the services

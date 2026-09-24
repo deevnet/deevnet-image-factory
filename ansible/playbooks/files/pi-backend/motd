@@ -1,0 +1,8 @@
+
+  deevnet-kit - your take-home Deevnet backend
+  --------------------------------------------
+  Start here:        less /opt/deevnet-kit/README.txt
+  Is it healthy?     sudo deevnet-kit status
+  Prove it works:    sudo deevnet-kit selftest
+  Your app's env:    sudo deevnet-kit export ~/deevnet-kit
+
