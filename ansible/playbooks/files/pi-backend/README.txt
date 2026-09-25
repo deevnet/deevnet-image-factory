@@ -18,27 +18,56 @@ Full guide: the Deevnet docs, "Take It Home on a Pi" (runbook/tenant).
 
 1. BEFORE THE FIRST BOOT (on your laptop, right after flashing)
 ---------------------------------------------------------------
-In Raspberry Pi Imager's OS customisation, set a hostname (say bench1), your
-own user and password, your Wi-Fi, and enable SSH. The image has no user of
-its own.
+Imager 2.x offers no OS customisation for a custom image, so set the card
+up here, on this boot partition. Three things:
 
-Then edit deevnet-kit.txt, next to this file on the boot partition:
+a) Your tenant - edit deevnet-kit.txt, next to this file:
 
-  tenant=bench1      your Deevnet tenant's name
-  index=4            your Deevnet tenant's index
+     tenant=bench1      your Deevnet tenant's name
+     index=4            your Deevnet tenant's index
 
-Keeping both the same as on Deevnet keeps every topic and partition header
-the same. Left empty, the tenant is "pi" with index 1. They are read ONCE,
-on the first boot.
+   Keeping both the same as on Deevnet keeps every topic and partition
+   header the same. Left empty, the tenant is "pi" with index 1. Read ONCE,
+   on the first boot.
+
+b) Your login - create userconf.txt here, one line, username:password-hash.
+   The username is yours to choose; the image has no user of its own.
+
+     echo "you:$(openssl passwd -6)" > userconf.txt
+
+   macOS's own openssl can't make this hash. Use Homebrew's
+   ($(brew --prefix openssl)/bin/openssl passwd -6), or run it on any Linux
+   machine and paste the line in.
+
+c) SSH - create an empty file named ssh here:   touch ssh
+
+If your Imager DOES offer OS customisation for this image, you can use that
+instead of b) and c).
+
+
+HOW YOU SIGN IN - your choice
+-----------------------------
+  Password only       nothing more to do: ssh you@<pi>
+  A key you have      after first boot, once:
+                        ssh-copy-id -i ~/.ssh/id_ed25519.pub you@<pi>
+  A new key           ssh-keygen -t ed25519 -f ~/.ssh/my-pi
+                        ssh-copy-id -i ~/.ssh/my-pi.pub you@<pi>
+                        ssh -i ~/.ssh/my-pi you@<pi>
+
+ssh-copy-id asks for the password once. The name at the end of a public key
+is only a label: a key made as "alice" works for a Pi user called "bench1".
+Password sign-in stays on either way; turning it off is your call.
 
 
 2. FIRST BOOT
 -------------
-Imager's own setup runs and reboots. Then deevnet-kit sets the card up, starts
-everything and tests it. Give it a few minutes (Grafana's first start is the
-slow part), then:
+First boot creates your user, grows the filesystem and reboots once. Then
+deevnet-kit sets the card up, starts everything and tests it. Give it a few
+minutes (Grafana's first start is the slow part). The hostname is
+"raspberrypi" unless you changed it; find the Pi's address on your router,
+or use raspberrypi.local from a laptop on the same network. Then:
 
-  ssh you@bench1.local
+  ssh you@<pi>
   sudo deevnet-kit status          services, endpoints, last self-test
   sudo deevnet-kit selftest        prove it works end to end (about a minute)
 
@@ -47,6 +76,10 @@ line sent over MQTT and read back, an app log line sent and read back, and
 your Grafana login, data sources and dashboard. It runs by itself on every
 boot; "status" shows the last result. Each run leaves two log lines marked
 "deevnet-kit selftest"; they age out after 30 days.
+
+If the Pi's address changes after first boot, the certificate no longer names
+it and "status" says so: run  sudo deevnet-kit regen-certs  (same CA, so no
+device needs a new one).
 
 
 3. YOUR APP'S SETTINGS
@@ -123,7 +156,7 @@ WHEN SOMETHING IS WRONG
                                        deevnet-log-bridge, grafana,
                                        deevnet-kit-dashboards
   sudo deevnet-kit regen-certs         the Pi's address changed and devices
-                                       fail with a TLS error
+                                       fail with a TLS error (see 2.)
   sudo deevnet-kit render              rewrite the broker and log config
 
 You are this card's operator. Grafana's admin password is
