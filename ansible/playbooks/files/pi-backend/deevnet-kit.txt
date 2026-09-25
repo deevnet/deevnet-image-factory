@@ -6,6 +6,7 @@
 #
 # Left empty, the tenant is "pi" and the index is 1.
 #
-# Instructions: README.txt, next to this file.
+# Instructions: README.txt, next to this file. It also covers userconf.txt
+# (your login) and ssh (turns SSH on), which go beside this file too.
 tenant=
 index=
