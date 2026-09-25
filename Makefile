@@ -37,9 +37,11 @@ ARTIFACT_URL := http://artifacts.mobile.deevnet.net
 # ------------------------------------------------------------
 # Proxmox API credentials (read from the Deevnet inventory vault)
 # ------------------------------------------------------------
-# The TF_VAR_proxmox_* variables Packer reads via env() are rendered out of
-# host_vars/<host>/vault.yml rather than exported by hand. The two hypervisors
-# are standalone nodes, each with its own API token:
+# The TF_VAR_proxmox_* variables Packer reads via env() are fetched per run by
+# scripts/pve-creds and eval'd into the recipe's own environment. NOTHING IS
+# WRITTEN TO DISK: the token lives in the build's process environment and
+# nowhere else (Build-Time Secrets runbook). The two hypervisors are standalone
+# nodes, each with its own API token:
 #
 #   pve1  ->  dv02hyp001p01  (10.20.99.21)
 #   pve2  ->  dv02hyp002p02  (10.20.99.22)
@@ -48,14 +50,16 @@ ARTIFACT_URL := http://artifacts.mobile.deevnet.net
 # names: since ADR-0008 the node name is the inventory name (see PVE*_NODE).
 #
 #   eval "`make -s pve2-env`"     # export into the current shell
-#   make proxmox-fedora-pve2      # or let the build target load them itself
+#   make proxmox-fedora-pve2      # or let the build target fetch them itself
 #
-# Needs the ansible-vault password: set ANSIBLE_VAULT_PASSWORD_FILE, or answer
-# the prompt. Rendered files are mode 0600 under build/pve-env/ (gitignored) and
-# hold a live token secret - run `make pve-env-clean` when finished.
+# Source: PVE_CREDS_SOURCE=openbao (default: the image-factory AppRole reads
+# image-factory/proxmox/<node>, CHG-0026) or inventory (the vault itself, when
+# OpenBao is down). Either way the inventory is needed, for the vault password:
+# set ANSIBLE_VAULT_PASSWORD_FILE, or answer the prompt.
 DEEVNET_INVENTORY ?= $(CURDIR)/../ansible-inventory-deevnet/mobile
-PVE_ENV_DIR       := $(CURDIR)/build/pve-env
-PVE_ENV_PLAYBOOK  := $(CURDIR)/ansible/playbooks/pve-env.yml
+PVE_CREDS         := $(CURDIR)/scripts/pve-creds
+PVE_CREDS_SOURCE  ?= openbao
+export DEEVNET_INVENTORY PVE_CREDS_SOURCE
 
 # Inventory host -> Proxmox node name. These are now the same string on both
 # hypervisors - the node was renamed to match its inventory name - but the pair
@@ -78,20 +82,11 @@ PVE2_STORAGE_POOL ?= local-lvm
 # Passed through to `packer build`, e.g. PACKER_EXTRA_ARGS='-var storage_pool=local-lvm'
 PACKER_EXTRA_ARGS ?=
 
-# Render one hypervisor's credentials.  $(1) = inventory host, $(2) = node name.
-# Ansible chatter goes to stderr so `make -s pveN-env` emits only export lines.
-define pve_render_env
-if [[ ! -d "$(DEEVNET_INVENTORY)" ]]; then
-	echo "$(RED)✗ Inventory not found: $(DEEVNET_INVENTORY)$(NC)" >&2
-	echo "$(YELLOW)  Override with: make <target> DEEVNET_INVENTORY=/path/to/mobile$(NC)" >&2
-	exit 1
-fi
-mkdir -p "$(PVE_ENV_DIR)"
-chmod 0700 "$(PVE_ENV_DIR)"
-ansible-playbook -i "$(DEEVNET_INVENTORY)" "$(PVE_ENV_PLAYBOOK)" \
-	-e pve_host=$(1) \
-	-e pve_node=$(2) \
-	-e pve_env_file="$(PVE_ENV_DIR)/$(2).env" 1>&2
+# Fetch one hypervisor's credentials into THIS recipe's environment.
+# $(1) = inventory host, $(2) = node name. The recipes run in one shell
+# (.ONESHELL), so the exports reach the packer command below them.
+define pve_creds
+eval "$$($(PVE_CREDS) $(1) $(2))"
 endef
 
 # ------------------------------------------------------------
@@ -198,7 +193,7 @@ help:
 	@echo "Proxmox credentials (from the Deevnet inventory vault):"
 	@echo "  pve1-env               Print TF_VAR_proxmox_* exports for $(PVE1_NODE)  (eval it)"
 	@echo "  pve2-env               Print TF_VAR_proxmox_* exports for $(PVE2_NODE)  (eval it)"
-	@echo "  pve-env-clean          Delete the rendered credential files"
+	@echo "  pve-env-clean          Delete legacy rendered credential files (none are written now)"
 	@echo ""
 	@echo "Proxmox VE bare metal ISO:"
 	@echo "  proxmox-pve-iso-container  Build container with Proxmox tooling (one-time)"
@@ -701,18 +696,16 @@ check-loop-devices:
 proxmox-fedora: init-proxmox
 	cd packer/proxmox/fedora-base-image && packer build $(PACKER_EXTRA_ARGS) -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
-# Same build, but with the credentials pulled from the vault for that node.
+# Same build, with the credentials fetched for that node (never written to disk).
 proxmox-fedora-pve1: init-proxmox
-	$(call pve_render_env,$(PVE1_HOST),$(PVE1_NODE))
-	source "$(PVE_ENV_DIR)/$(PVE1_NODE).env"
+	$(call pve_creds,$(PVE1_HOST),$(PVE1_NODE))
 	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE1_NODE)...$(NC)"
 	cd packer/proxmox/fedora-base-image
 	packer build -var storage_pool=$(PVE1_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
 		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 proxmox-fedora-pve2: init-proxmox
-	$(call pve_render_env,$(PVE2_HOST),$(PVE2_NODE))
-	source "$(PVE_ENV_DIR)/$(PVE2_NODE).env"
+	$(call pve_creds,$(PVE2_HOST),$(PVE2_NODE))
 	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE2_NODE)...$(NC)"
 	cd packer/proxmox/fedora-base-image
 	packer build -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
@@ -723,16 +716,15 @@ proxmox-fedora-pve2: init-proxmox
 # ------------------------------------------------------------
 # Print exports for the current shell:  eval "`make -s pve2-env`"
 pve1-env:
-	$(call pve_render_env,$(PVE1_HOST),$(PVE1_NODE))
-	cat "$(PVE_ENV_DIR)/$(PVE1_NODE).env"
+	$(PVE_CREDS) $(PVE1_HOST) $(PVE1_NODE)
 
 pve2-env:
-	$(call pve_render_env,$(PVE2_HOST),$(PVE2_NODE))
-	cat "$(PVE_ENV_DIR)/$(PVE2_NODE).env"
+	$(PVE_CREDS) $(PVE2_HOST) $(PVE2_NODE)
 
+# One-time cleanup: credentials used to be rendered to build/pve-env/*.env.
 pve-env-clean:
-	rm -rf "$(PVE_ENV_DIR)"
-	echo "$(GREEN)✓ Removed rendered Proxmox credentials$(NC)"
+	rm -rf "$(CURDIR)/build/pve-env"
+	echo "$(GREEN)✓ Removed any legacy rendered Proxmox credential files$(NC)"
 
 # ------------------------------------------------------------
 # Proxmox VE Bare Metal ISO

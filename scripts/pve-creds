@@ -1,0 +1,153 @@
+#!/usr/bin/python3 -P
+"""pve-creds - print the TF_VAR_proxmox_* exports for one hypervisor.
+
+    eval "$(scripts/pve-creds dv02hyp002p02 dv02hyp002p02)"
+    eval "$(scripts/pve-creds --source inventory dv02hyp002p02 dv02hyp002p02)"
+
+The Proxmox API token that Packer templates and the tenant fabric's Terraform
+use (Build-Time Secrets runbook). The exports go to STDOUT ONLY, for the
+caller to eval into its own environment: nothing is written to disk, and
+nothing is put on a command line where `ps` or shell history would keep it.
+
+Sources:
+  openbao    (default) log in as the image-factory AppRole, read
+             image-factory/proxmox/<node>, revoke the token. Every read is in
+             OpenBao's audit log, and the token lives minutes (CHG-0026).
+  inventory  read the hypervisor's host_vars from the Deevnet inventory, the
+             authoritative copy. The fallback when OpenBao is down.
+
+Both need the inventory: the AppRole's credentials are vaulted there too.
+Encrypted vault files are opened with ANSIBLE_VAULT_PASSWORD_FILE, or a prompt
+on the terminal. Ansible's own libraries are used in-process, so nothing is
+logged and templated values ({{ vault_... }}) resolve as they do in a play.
+"""
+
+import argparse
+import getpass
+import glob
+import json
+import os
+import shlex
+import ssl
+import sys
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_INVENTORY = os.path.join(HERE, "..", "..", "ansible-inventory-deevnet", "mobile")
+DEFAULT_BAO_CA_DIR = os.path.join(HERE, "..", "..", "ansible-collection-deevnet.mgmt", ".openbao")
+PVE_API_PORT = 8006
+KV_MOUNT = "image-factory"
+
+
+def die(msg):
+    print(f"pve-creds: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def load_inventory(path):
+    from ansible.inventory.manager import InventoryManager
+    from ansible.parsing.dataloader import DataLoader
+    from ansible.parsing.vault import VaultSecret
+    from ansible.vars.manager import VariableManager
+
+    loader = DataLoader()
+    encrypted = [f for f in glob.glob(os.path.join(path, "**", "vault.yml"), recursive=True)
+                 if open(f, "rb").read(14) == b"$ANSIBLE_VAULT"]
+    if encrypted:
+        pwfile = os.environ.get("ANSIBLE_VAULT_PASSWORD_FILE")
+        if pwfile:
+            pw = open(os.path.expanduser(pwfile)).read().strip()
+        else:
+            pw = getpass.getpass("Vault password: ", stream=sys.stderr)
+        loader.set_vault_secrets([("default", VaultSecret(pw.encode()))])
+    inv = InventoryManager(loader=loader, sources=[path])
+    return loader, inv, VariableManager(loader=loader, inventory=inv)
+
+
+def host_value(loader, inv, vm, host, name):
+    from ansible.template import Templar
+
+    h = inv.get_host(host)
+    if h is None:
+        die(f"{host} is not in the inventory")
+    hv = vm.get_vars(host=h)
+    if name not in hv:
+        return ""
+    return Templar(loader=loader, variables=hv).template(hv[name])
+
+
+def from_inventory(loader, inv, vm, host):
+    tid = host_value(loader, inv, vm, host, "proxmox_token_id")
+    secret = host_value(loader, inv, vm, host, "proxmox_token_secret")
+    addr = host_value(loader, inv, vm, host, "ansible_host") or host
+    if not tid or not secret:
+        die(f"{host} has no proxmox_token_id / proxmox_token_secret in the inventory "
+            "(host_vars/<host>/vault.yml)")
+    return {"url": f"https://{addr}:{PVE_API_PORT}/api2/json", "token_id": tid, "token_secret": secret}
+
+
+def bao(ctx, addr, method, path, token=None, body=None):
+    req = urllib.request.Request(f"{addr}/v1/{path}", method=method,
+                                 data=json.dumps(body).encode() if body is not None else None)
+    if token:
+        req.add_header("X-Vault-Token", token)
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        die(f"OpenBao {method} {path}: {e.code}")
+
+
+def from_openbao(loader, inv, vm, host, node):
+    baos = inv.get_groups_dict().get("openbao") or []
+    if not baos:
+        die("the inventory has no host in the openbao group")
+    bao_host = baos[0]
+    addr = os.environ.get("OPENBAO_ADDR") or \
+        f"https://{host_value(loader, inv, vm, bao_host, 'ansible_host') or bao_host}:8200"
+    ca = os.environ.get("OPENBAO_CACERT") or os.path.join(DEFAULT_BAO_CA_DIR, f"{bao_host}-listener.pem")
+    if not os.path.exists(ca):
+        die(f"no OpenBao listener CA at {ca}; set OPENBAO_CACERT")
+    role_id = host_value(loader, inv, vm, host, "vault_openbao_image_factory_role_id")
+    secret_id = host_value(loader, inv, vm, host, "vault_openbao_image_factory_secret_id")
+    if not role_id or not secret_id:
+        die("vault_openbao_image_factory_role_id / _secret_id are not in the inventory "
+            "(group_vars/all/vault.yml); use --source inventory until CHG-0026 is deployed")
+    ctx = ssl.create_default_context(cafile=ca)
+    token = bao(ctx, addr, "POST", "auth/approle/login",
+                body={"role_id": role_id, "secret_id": secret_id})["auth"]["client_token"]
+    try:
+        data = bao(ctx, addr, "GET", f"{KV_MOUNT}/data/proxmox/{node}", token=token)["data"]["data"]
+    finally:
+        bao(ctx, addr, "POST", "auth/token/revoke-self", token=token)
+    for k in ("url", "token_id", "token_secret"):
+        if not data.get(k):
+            die(f"{KV_MOUNT}/proxmox/{node} has no {k}")
+    return data
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--source", choices=["openbao", "inventory"],
+                    default=os.environ.get("PVE_CREDS_SOURCE", "openbao"))
+    ap.add_argument("--inventory", default=os.environ.get("DEEVNET_INVENTORY", DEFAULT_INVENTORY))
+    ap.add_argument("host", help="the hypervisor's inventory name")
+    ap.add_argument("node", help="its Proxmox node name")
+    a = ap.parse_args()
+    if not os.path.isdir(a.inventory):
+        die(f"inventory not found: {a.inventory} (set DEEVNET_INVENTORY)")
+
+    loader, inv, vm = load_inventory(a.inventory)
+    c = from_openbao(loader, inv, vm, a.host, a.node) if a.source == "openbao" \
+        else from_inventory(loader, inv, vm, a.host)
+
+    q = shlex.quote
+    print(f"export TF_VAR_proxmox_url={q(c['url'])}")
+    print(f"export TF_VAR_proxmox_node={q(a.node)}")
+    print(f"export TF_VAR_proxmox_token_id={q(c['token_id'])}")
+    print(f"export TF_VAR_proxmox_token_secret={q(c['token_secret'])}")
+
+
+if __name__ == "__main__":
+    main()
