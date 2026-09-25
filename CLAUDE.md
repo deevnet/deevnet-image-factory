@@ -34,17 +34,17 @@ Run `make help` for the full target list.
 
 ### Building Proxmox Templates
 
-Preferred: the per-node Make targets. They read the API token from
-`host_vars/<host>/vault.yml` in the Deevnet inventory (via
-`ansible/playbooks/pve-env.yml`) and select that node's disk storage pool, so no
-credentials are exported by hand.
+Preferred: the per-node Make targets. They fetch the node's API token per run
+with `scripts/pve-creds` - from OpenBao as the image-factory AppRole (CHG-0026),
+or with `PVE_CREDS_SOURCE=inventory` straight from the inventory vault - and
+eval it into the recipe's environment. **Never render a credential to a file**;
+nothing in this repo writes one. They also select the node's storage pool.
 
 ```bash
 make proxmox-fedora-pve2                      # Fedora 44 on node pve2 (hv02)
 make proxmox-fedora-pve1 FEDORA_RELEASE=43    # Fedora 43 on node pve  (hv01)
 
-eval "$(make -s pve2-env)"                    # or export into the shell
-make pve-env-clean                            # remove the rendered file after
+eval "$(make -s pve2-env)"                    # or export into the current shell
 ```
 
 Direct packer invocation still works if `TF_VAR_proxmox_*` are exported.

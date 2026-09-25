@@ -23,11 +23,13 @@ export them into the current shell:
 ```bash
 eval "$(make -s pve2-env)"
 make proxmox-fedora
-make pve-env-clean          # remove the rendered credential file when done
 ```
 
-Both require the ansible-vault password - set `ANSIBLE_VAULT_PASSWORD_FILE`
-or answer the prompt.
+Nothing is written to disk: `scripts/pve-creds` prints the exports and the caller
+evals them. By default it reads OpenBao as the image-factory AppRole
+(`image-factory/proxmox/<node>`); `PVE_CREDS_SOURCE=inventory` reads the
+inventory vault instead, for when OpenBao is down. Both need the ansible-vault
+password - set `ANSIBLE_VAULT_PASSWORD_FILE` or answer the prompt.
 
 ## Manual credentials
 
@@ -71,5 +73,5 @@ Template is stored directly in Proxmox (not as a local file).
 
 - `packer/proxmox/fedora-base-image/fedora.pkr.hcl` - Packer template definition
 - `packer/proxmox/fedora-base-image/fedora-*.pkrvars.hcl` - per-release variables
-- `ansible/playbooks/pve-env.yml` - renders vault credentials into TF_VAR_proxmox_*
+- `scripts/pve-creds` - prints TF_VAR_proxmox_* exports from OpenBao or the inventory vault; never writes a file
 - `packer/proxmox/fedora-base-image/http/kickstart.cfg.pkrtpl` - Kickstart configuration
