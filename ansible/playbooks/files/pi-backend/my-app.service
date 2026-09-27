@@ -8,10 +8,10 @@
 # 2. On the Pi, re-create your app's broker account with the password it had
 #    on Deevnet (MQTT_PASSWORD in your Deevnet kit.env), then export kit.env
 #    with that login in it:
-#      sudo deevnet-kit account add app --subscribe 'sensors/+/telemetry' \
-#          --password-file app.pw
-#      sudo deevnet-kit export /opt/my-app --app app --password-file app.pw
-#      shred -u app.pw
+#      sudo deevnet-kit account add backend --subscribe 'sensors/+/telemetry' \
+#          --password-file backend.pw
+#      sudo deevnet-kit export /opt/my-app --app backend --password-file backend.pw
+#      shred -u backend.pw
 #
 # 3. Install and start this unit:
 #      sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/

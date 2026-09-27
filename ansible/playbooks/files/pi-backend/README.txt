@@ -96,14 +96,15 @@ device needs a new one).
 
 3. YOUR APP'S SETTINGS
 ----------------------
-Your app logs in to the broker with its own account. Re-create it here with
+Your app logs in to the broker with its own account (backend, in the tenant
+guide's walkthrough). Re-create it here with
 the password it had on Deevnet (MQTT_PASSWORD in your Deevnet kit.env), in a
 file so it stays out of your shell history:
 
-  sudo deevnet-kit account add app --subscribe 'sensors/+/telemetry' \
-    --password-file app.pw
-  sudo deevnet-kit export ~/deevnet-kit --app app --password-file app.pw
-  shred -u app.pw
+  sudo deevnet-kit account add backend --subscribe 'sensors/+/telemetry' \
+    --password-file backend.pw
+  sudo deevnet-kit export ~/deevnet-kit --app backend --password-file backend.pw
+  shred -u backend.pw
 
 writes kit.env (every endpoint, token and login, including MQTT_USERNAME and
 MQTT_PASSWORD, under the same names the Deevnet guide uses) and site-ca.pem
@@ -169,9 +170,9 @@ it across - no registry needed:
   podman build --platform linux/arm64 -t my-app .
   podman save my-app | ssh you@bench1.local sudo podman load
 
-On the Pi (with app.pw as in 3.):
+On the Pi (with backend.pw as in 3.):
 
-  sudo deevnet-kit export /opt/my-app --app app --password-file app.pw
+  sudo deevnet-kit export /opt/my-app --app backend --password-file backend.pw
   sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
   sudo systemctl daemon-reload && sudo systemctl enable --now my-app
   sudo journalctl -u my-app -f
