@@ -13,7 +13,7 @@ Nothing on it belongs to Deevnet: no Deevnet account, key or route. The CA,
 certificates, tokens and passwords are made on this card the first time it
 boots, so no two cards share anything.
 
-Full guide: the Deevnet docs, "Take It Home on a Pi" (runbook/tenant).
+Full guide: the Deevnet docs, "Convert a Tenant to a Pi Image" (runbook/tenant).
 
 
 1. BEFORE THE FIRST BOOT (on your laptop, right after flashing)
