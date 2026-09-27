@@ -15,6 +15,11 @@ It is built on the same Packer step, then `pi-backend-config.yml` **removes** `a
 the build if any trace remains. Nothing secret is baked in; `deevnet-kit init` makes the card's CA
 and tokens on first boot. Don't add Deevnet access to it.
 
+**The tenant Fedora template is the other exception** (ADR-0028): `make proxmox-fedora-tenant`
+builds `fedora-tenant-<ver>` from the same Packer definition with `flavor=tenant`, and its last step
+removes `a_autoprov` and fails the build if any trace remains. Tenant workloads clone it and hold
+only their tenant's keys. Don't give it back an automation user.
+
 ### Platform-Specific Details
 
 **Raspberry Pi (ARM)**:
