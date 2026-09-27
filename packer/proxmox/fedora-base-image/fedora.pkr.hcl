@@ -138,6 +138,22 @@ variable "bridge_name" {
   default = "vmbr0"
 }
 
+# Who clones this template (ADR-0028). A substrate template keeps a_autoprov,
+# the automation account every substrate VM is managed through. A tenant
+# template is the one tenant workloads clone, and ships with NO a_autoprov: the
+# account and its key are removed as the build's last step, so the only way into
+# a tenant workload is the key its tenant gave it, on the account cloud-init
+# creates (DEEVNET_TENANT_CIUSER). The two carry different name prefixes, so
+# the API's "newest by prefix" can never pick the wrong one.
+variable "flavor" {
+  type    = string
+  default = "substrate"
+  validation {
+    condition     = contains(["substrate", "tenant"], var.flavor)
+    error_message = "The flavor is substrate or tenant."
+  }
+}
+
 locals {
   # dracut ip= syntax: client:server:gateway:netmask:hostname:interface:autoconf
   # The interface field is deliberately empty - there is exactly one NIC on the
@@ -146,6 +162,7 @@ locals {
   boot_ip = var.build_use_dhcp ? "ip=dhcp" : "ip=${var.build_ip}::${var.build_gateway}:${var.build_netmask}:packer-build::none"
 
   version_tag = "${var.fedora_release}-${var.fedora_build}"
+  name_prefix = var.flavor == "tenant" ? "fedora-tenant" : "fedora-server"
   iso_name    = "Fedora-Server-dvd-x86_64-${local.version_tag}.iso"
   iso_url     = "${var.artifact_server_url}/fedora/${var.fedora_release}/iso/${local.iso_name}"
 }
@@ -233,8 +250,8 @@ source "proxmox-iso" "fedora-kickstart" {
 
   # Template configuration
   qemu_agent           = true
-  template_description = "Fedora Server ${local.version_tag}, generated on ${timestamp()}"
-  template_name        = "fedora-server-${local.version_tag}"
+  template_description = "Fedora Server ${local.version_tag} (${var.flavor}), generated on ${timestamp()}"
+  template_name        = "${local.name_prefix}-${local.version_tag}"
 }
 
 build {
@@ -292,7 +309,14 @@ build {
       "sudo rm -f /etc/ssh/ssh_host_*key*",
 
       "sudo rm -rf /var/lib/cloud/instances /var/lib/cloud/instance",
-      "sudo sh -c 'rm -f /root/.bash_history /home/a_autoprov/.bash_history' || true"
+      "sudo sh -c 'rm -f /root/.bash_history /home/a_autoprov/.bash_history' || true",
+
+      # A tenant template keeps nothing of the substrate's (ADR-0028). This is
+      # the build's own login, so it goes in ONE sudo, as the very last command:
+      # once the sudoers file is gone there is no second sudo. -f because the
+      # account is logged in right now. Then prove it: any trace fails the
+      # build rather than shipping the substrate key to a tenant.
+      "if [ '${var.flavor}' = tenant ]; then sudo sh -euc 'rm -f /etc/sudoers.d/010_a_autoprov-nopasswd; userdel -f -r a_autoprov 2>/dev/null || userdel -f a_autoprov; rm -rf /home/a_autoprov; if grep -q a_autoprov /etc/passwd /etc/shadow /etc/group || ls /etc/sudoers.d | grep -q autoprov || [ -e /home/a_autoprov ]; then echo \"a_autoprov survived the tenant build\" >&2; exit 1; fi'; fi"
     ]
   }
 
