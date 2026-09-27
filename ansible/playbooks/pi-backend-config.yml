@@ -11,7 +11,7 @@
 #   victorialogs         the log store, loopback only
 #   vmauth               the log store's front door, users rendered by deevnet-log-user
 #   deevnet-log-bridge   <tenant>/log/<device> -> the tenant's device partition
-#   grafana              the tenant's dashboards on 3000, organisation and data
+#   grafana              the tenant's dashboards on 3000, organization and data
 #                        sources written by `deevnet-kit dashboards` (CHG-0024)
 #   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
 #   podman               for the tenant's own app
@@ -53,6 +53,7 @@
       - avahi-daemon
 
     pi_backend_units:
+      - deevnet-kit-ssh-hostkeys.service
       - deevnet-kit-firstboot.service
       - victorialogs.service
       - vmauth.service
@@ -287,6 +288,7 @@
         - {src: mosquitto-override.conf, dest: /etc/systemd/system/mosquitto.service.d/deevnet-kit.conf}
         - {src: log-user.json, dest: /etc/deevnet/log-user.json}
         - {src: my-app.service, dest: /opt/deevnet-kit/examples/my-app.service}
+        - {src: deevnet-kit-ssh-hostkeys.service, dest: /etc/systemd/system/deevnet-kit-ssh-hostkeys.service}
         - {src: deevnet-kit-firstboot.service, dest: /etc/systemd/system/deevnet-kit-firstboot.service}
         - {src: victorialogs.service, dest: /etc/systemd/system/victorialogs.service}
         - {src: vmauth.service, dest: /etc/systemd/system/vmauth.service}
@@ -338,8 +340,8 @@
     # ------------------------------------------------------------
     # Hand-off: nothing of Deevnet's stays on the card
     # ------------------------------------------------------------
-    # Last, so nothing above depends on the user. Pi Imager's OS
-    # customisation creates the owner's own login on first boot.
+    # Last, so nothing above depends on the user. The owner's own
+    # login comes from userconf.txt on the boot partition, on first boot.
     - name: Remove the automation user and its home
       ansible.builtin.command:
         cmd: "chroot {{ chroot_root }} userdel --remove a_autoprov"
@@ -360,6 +362,14 @@
           ls -d {{ chroot_root }}/home/a_autoprov 2>/dev/null; true
       register: pi_backend_leftovers
       changed_when: false
+
+    # Every card would otherwise present the SSH identity of the image it was
+    # flashed from. deevnet-kit-ssh-hostkeys.service makes new ones on first
+    # boot.
+    - name: Remove the SSH host keys the image was built with
+      ansible.builtin.shell:
+        cmd: "rm -f {{ chroot_root }}/etc/ssh/ssh_host_*"
+      changed_when: true
 
     - name: Fail if the automation user is still on the card
       ansible.builtin.assert:

@@ -1,24 +1,39 @@
 # deevnet-kit - an example unit for your app, run as a container.
 #
-#   sudo deevnet-kit export /opt/my-app      # kit.env + site-ca.pem
-#   sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
-#   (edit IMAGE= below)
-#   sudo systemctl daemon-reload && sudo systemctl enable --now my-app
+# 1. On your laptop, build for the Pi and copy the image across (no registry
+#    needed):
+#      podman build --platform linux/arm64 -t my-app .
+#      podman save my-app | ssh you@<hostname>.local sudo podman load
 #
-# Host networking, and localhost for both services: the container cannot
-# resolve <hostname>.local, and the certificate carries localhost too.
+# 2. On the Pi, re-create your app's broker account with the password it had
+#    on Deevnet (MQTT_PASSWORD in your Deevnet kit.env), then export kit.env
+#    with that login in it:
+#      sudo deevnet-kit account add app --subscribe 'sensors/+/telemetry' \
+#          --password-file app.pw
+#      sudo deevnet-kit export /opt/my-app --app app --password-file app.pw
+#      shred -u app.pw
+#
+# 3. Install and start this unit:
+#      sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
+#      sudo systemctl daemon-reload && sudo systemctl enable --now my-app
+#
+# Host networking, and localhost for every service: a container cannot resolve
+# <hostname>.local, and the certificate carries localhost too.
 [Unit]
 Description=My app (container)
-After=mosquitto.service vmauth.service
+After=mosquitto.service vmauth.service grafana.service
 Wants=mosquitto.service vmauth.service
 
 [Service]
-Environment=IMAGE=docker.io/library/my-app:latest
+# `podman load` names the image localhost/my-app.
+Environment=IMAGE=localhost/my-app:latest
 ExecStartPre=-/usr/bin/podman rm -f my-app
 ExecStart=/usr/bin/podman run --rm --name my-app --network host \
   --env-file /opt/my-app/kit.env \
   -e MQTT_HOST=localhost -e LOG_ENDPOINT=https://localhost:8427 \
-  -e MQTT_CA_FILE=/kit/site-ca.pem -v /opt/my-app/site-ca.pem:/kit/site-ca.pem:ro \
+  -e GRAFANA_URL=https://localhost:3000 \
+  -e MQTT_CA_FILE=/kit/site-ca.pem -e GRAFANA_CA_CERT=/kit/site-ca.pem \
+  -v /opt/my-app/site-ca.pem:/kit/site-ca.pem:ro \
   ${IMAGE}
 ExecStop=/usr/bin/podman stop -t 10 my-app
 Restart=on-failure

@@ -2,8 +2,9 @@
 # It chooses the tenant, makes this card's CA, certificate and tokens, and
 # writes the broker's and the log store's configuration.
 #
-# Pi Imager's own first boot (user, Wi-Fi, hostname) runs in a separate boot
-# before this one, so the certificate carries the hostname the owner chose.
+# It also applies the owner's hostname= and Wi-Fi from deevnet-kit.txt, before
+# it issues the certificate, so the certificate carries the name and the
+# Wi-Fi address devices will dial.
 [Unit]
 Description=deevnet-kit first boot (tenant, CA, tokens)
 ConditionPathExists=!/etc/deevnet-kit/kit.json

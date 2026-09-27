@@ -3,7 +3,7 @@
 # Grafana alerting, and nothing fetched from the internet. The admin password
 # and secret key are the card's own, in grafana.env, written by first boot.
 #
-# auto_assign_org stays ON: Grafana 13 honours the organisation deevnet-kit
+# auto_assign_org stays ON: Grafana 13 honors the organization deevnet-kit
 # names for the tenant's login only while it is (verified on 13.2.2).
 [Unit]
 Description=Grafana, the tenant's dashboards (deevnet-kit)
