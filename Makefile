@@ -162,7 +162,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-backend-publish pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
 .PHONY: pve1-env pve2-env pve-env-clean
-.PHONY: proxmox-fedora-pve1 proxmox-fedora-pve2
+.PHONY: proxmox-fedora-pve1 proxmox-fedora-pve2 proxmox-fedora-tenant
 .PHONY: proxmox-pve-iso-container proxmox-pve-iso-zfs proxmox-pve-iso-ext4
 .PHONY: proxmox-pve-iso-http proxmox-pve-pxe proxmox-pve-iso-clean
 
@@ -189,6 +189,7 @@ help:
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
 	@echo "  proxmox-fedora-pve1    ... on node $(PVE1_NODE), credentials from vault ($(PVE1_HOST))"
 	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE), credentials from vault ($(PVE2_HOST))"
+	@echo "  proxmox-fedora-tenant  Tenant workload template (no a_autoprov) on $(PVE2_NODE)"
 	@echo ""
 	@echo "Proxmox credentials (from the Deevnet inventory vault):"
 	@echo "  pve1-env               Print TF_VAR_proxmox_* exports for $(PVE1_NODE)  (eval it)"
@@ -709,6 +710,15 @@ proxmox-fedora-pve2: init-proxmox
 	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE2_NODE)...$(NC)"
 	cd packer/proxmox/fedora-base-image
 	packer build -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
+		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+
+# The template tenant workloads clone (ADR-0028): fedora-tenant-<ver>, with no
+# a_autoprov. Tenants live on the tenant hypervisor, so it builds there.
+proxmox-fedora-tenant: init-proxmox
+	$(call pve_creds,$(PVE2_HOST),$(PVE2_NODE))
+	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) TENANT template on node $(PVE2_NODE)...$(NC)"
+	cd packer/proxmox/fedora-base-image
+	packer build -var flavor=tenant -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
 		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 # ------------------------------------------------------------
