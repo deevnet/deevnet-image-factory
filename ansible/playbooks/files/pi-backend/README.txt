@@ -7,7 +7,7 @@ devices used on Deevnet at the meetup:
   MQTT broker (TLS)     port 8883   Mosquitto; your topics under <tenant>/
   Log store (TLS)       port 8427   VictoriaLogs behind vmauth, same tokens
   Device-log bridge                 <tenant>/log/<device> -> your device logs
-  Dashboards (HTTPS)    port 3000   Grafana, your own organisation
+  Dashboards (HTTPS)    port 3000   Grafana, your own organization
 
 Nothing on it belongs to Deevnet: no Deevnet account, key or route. The CA,
 certificates, tokens and passwords are made on this card the first time it
@@ -18,8 +18,8 @@ Full guide: the Deevnet docs, "Take It Home on a Pi" (runbook/tenant).
 
 1. BEFORE THE FIRST BOOT (on your laptop, right after flashing)
 ---------------------------------------------------------------
-Imager 2.x offers no OS customisation for a custom image, so set the card
-up here, on this boot partition. Three things:
+Imager 2.x offers no OS customization for a custom image, so set the card
+up here, on this boot partition. Four things:
 
 a) Your tenant - edit deevnet-kit.txt, next to this file:
 
@@ -41,8 +41,20 @@ b) Your login - create userconf.txt here, one line, username:password-hash.
 
 c) SSH - create an empty file named ssh here:   touch ssh
 
-If your Imager DOES offer OS customisation for this image, you can use that
-instead of b) and c).
+d) Its name and Wi-Fi - also in deevnet-kit.txt:
+
+     hostname=bench1          the card becomes bench1.local
+     wifi_ssid=YourNetwork    only if it is not on a cable
+     wifi_psk=YourPassword
+     wifi_country=US          required with Wi-Fi: the radio stays off
+                              without a country
+
+   Set a hostname at a meetup: two cards left as raspberrypi both answer to
+   raspberrypi.local. The Wi-Fi password is removed from deevnet-kit.txt
+   once it has been applied.
+
+If your Imager DOES offer OS customization for this image, you can use that
+instead of b), c) and the Wi-Fi in d).
 
 
 HOW YOU SIGN IN - your choice
@@ -63,9 +75,9 @@ Password sign-in stays on either way; turning it off is your call.
 -------------
 First boot creates your user, grows the filesystem and reboots once. Then
 deevnet-kit sets the card up, starts everything and tests it. Give it a few
-minutes (Grafana's first start is the slow part). The hostname is
-"raspberrypi" unless you changed it; find the Pi's address on your router,
-or use raspberrypi.local from a laptop on the same network. Then:
+minutes (Grafana's first start is the slow part). The card is
+<hostname>.local - raspberrypi.local if you left hostname empty - from a
+laptop on the same network, or find its address on your router. Then:
 
   ssh you@<pi>
   sudo deevnet-kit status          services, endpoints, last self-test
@@ -84,11 +96,19 @@ device needs a new one).
 
 3. YOUR APP'S SETTINGS
 ----------------------
-  sudo deevnet-kit export ~/deevnet-kit
+Your app logs in to the broker with its own account. Re-create it here with
+the password it had on Deevnet (MQTT_PASSWORD in your Deevnet kit.env), in a
+file so it stays out of your shell history:
 
-writes kit.env (every endpoint, token and login, under the same names the
-Deevnet guide uses) and site-ca.pem (this card's CA). Copy both to your
-laptop. An app that ran on Deevnet with a kit.env runs here with this one.
+  sudo deevnet-kit account add app --subscribe 'sensors/+/telemetry' \
+    --password-file app.pw
+  sudo deevnet-kit export ~/deevnet-kit --app app --password-file app.pw
+  shred -u app.pw
+
+writes kit.env (every endpoint, token and login, including MQTT_USERNAME and
+MQTT_PASSWORD, under the same names the Deevnet guide uses) and site-ca.pem
+(this card's CA). The password is checked against the account before it is
+written. An app that ran on Deevnet with a kit.env runs here with this one.
 
 
 4. YOUR DEVICES
@@ -98,7 +118,7 @@ keep it, so the device needs only a new host and CA:
 
   sudo deevnet-kit account add pico-1 --device pico-1 \
     --publish sensors/pico-1/telemetry --publish log/pico-1 \
-    --password '<the device password from Deevnet>'
+    --password-file pico-1.pw           (the device's password from Deevnet)
   sudo deevnet-kit account list
   sudo deevnet-kit account rm NAME
 
@@ -143,10 +163,21 @@ Put org_id = var.grafana_org_id on every grafana_* resource.
 
 7. YOUR APP ON THE PI
 ---------------------
-  sudo deevnet-kit export /opt/my-app
+Your app runs as a container. On your laptop, build it for the Pi and copy
+it across - no registry needed:
+
+  podman build --platform linux/arm64 -t my-app .
+  podman save my-app | ssh you@bench1.local sudo podman load
+
+On the Pi (with app.pw as in 3.):
+
+  sudo deevnet-kit export /opt/my-app --app app --password-file app.pw
   sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
-  sudoedit /etc/systemd/system/my-app.service       (set IMAGE=)
   sudo systemctl daemon-reload && sudo systemctl enable --now my-app
+  sudo journalctl -u my-app -f
+
+The example unit runs localhost/my-app:latest with kit.env, pointed at the
+services on localhost. Its comments say what to change for another name.
 
 
 WHEN SOMETHING IS WRONG

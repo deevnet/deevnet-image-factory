@@ -10,3 +10,16 @@
 # (your login) and ssh (turns SSH on), which go beside this file too.
 tenant=
 index=
+
+# The card's name on your network: it becomes <hostname>.local, and its
+# certificate names it. Left empty, it is raspberrypi - and two cards at one
+# meetup would both answer to raspberrypi.local. Letters, digits and dashes.
+hostname=
+
+# Wi-Fi, if the Pi is not on a cable. All three, or none. The country is a
+# two-letter code such as US: the Pi keeps its radio off until it has one.
+# The password is removed from this file once it has been applied, because
+# anyone holding the card can read this partition.
+wifi_ssid=
+wifi_psk=
+wifi_country=
