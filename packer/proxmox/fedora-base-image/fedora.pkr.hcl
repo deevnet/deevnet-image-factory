@@ -260,6 +260,12 @@ build {
   # Post-installation provisioning
   provisioner "shell" {
     inline = [
+      # Up to date at build time. A clone must not start hundreds of packages
+      # behind: the API no longer lets cloud-init upgrade on first boot
+      # (ciupgrade=0), because in CHG-0028 that upgrade took a workload's
+      # network down half way. Rebuild the template to pick up updates.
+      "sudo dnf -y upgrade --refresh",
+
       # Install additional packages
       # cloud-init is here rather than in the kickstart because it is not on
       # the Fedora Server DVD, and %packages runs with --ignoremissing -
