@@ -109,7 +109,7 @@ variable "iso_download_pve" {
 # the API, the broker and the log store, all of which serve chains to it.
 variable "site_root_ca_file" {
   type    = string
-  default = "../../../../ansible-inventory-deevnet/mobile/pki/deevnet-mobile-root-ca.pem"
+  default = "../../../../ansible-inventory-deevnet/pki/mobile/deevnet-mobile-root-ca.pem"
 }
 
 variable "artifact_server_url" {
