@@ -313,8 +313,9 @@ build {
       "sudo install -m 0644 -o root -g root /tmp/deevnet-site-root-ca.pem /etc/pki/ca-trust/source/anchors/deevnet-mobile-root-ca.pem",
       "rm -f /tmp/deevnet-site-root-ca.pem",
       "sudo update-ca-trust extract",
-      # Fail the build if the store does not now verify it.
-      "openssl verify /etc/pki/ca-trust/source/anchors/deevnet-mobile-root-ca.pem",
+      # Fail the build if the store does not now hold it. p11-kit's trust, not
+      # openssl: a minimal install has no openssl CLI.
+      "trust list --filter=ca-anchors | grep -q 'label: Deevnet mobile root CA'",
     ]
   }
 
