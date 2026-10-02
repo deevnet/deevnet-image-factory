@@ -32,8 +32,8 @@ ExecStart=/usr/bin/podman run --rm --name my-app --network host \
   --env-file /opt/my-app/kit.env \
   -e MQTT_HOST=localhost -e LOG_ENDPOINT=https://localhost:8427 \
   -e GRAFANA_URL=https://localhost:3000 \
-  -e MQTT_CA_FILE=/kit/site-ca.pem -e GRAFANA_CA_CERT=/kit/site-ca.pem \
-  -v /opt/my-app/site-ca.pem:/kit/site-ca.pem:ro \
+  -e MQTT_CA_FILE=/kit/deevnet-kit-ca.pem -e GRAFANA_CA_CERT=/kit/deevnet-kit-ca.pem \
+  -v /opt/my-app/deevnet-kit-ca.pem:/kit/deevnet-kit-ca.pem:ro \
   ${IMAGE}
 ExecStop=/usr/bin/podman stop -t 10 my-app
 Restart=on-failure
