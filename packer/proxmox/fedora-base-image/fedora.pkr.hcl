@@ -226,7 +226,9 @@ source "proxmox-iso" "fedora-kickstart" {
     unmount          = true
   }
 
-  insecure_skip_tls_verify = true
+  # Verified: the hypervisors serve site certificates (CHG-0032), and the
+  # Builder trusts the site root at the OS level.
+  insecure_skip_tls_verify = false
 
   # Network configuration
   network_adapters {
