@@ -103,6 +103,15 @@ variable "iso_download_pve" {
   default = false
 }
 
+# The site root CA (ADR-0030), from the inventory. Baked into the OS trust
+# store so a clone trusts it before Ansible reaches it. A public trust anchor,
+# not a credential, so the tenant flavor carries it too: tenant workloads dial
+# the API, the broker and the log store, all of which serve chains to it.
+variable "site_root_ca_file" {
+  type    = string
+  default = "../../../../ansible-inventory-deevnet/mobile/pki/deevnet-mobile-root-ca.pem"
+}
+
 variable "artifact_server_url" {
   type    = string
   default = "http://artifacts.mobile.deevnet.net"
@@ -291,6 +300,21 @@ build {
       "sudo mkdir -p /tmp/.ansible-root",
       "sudo chmod 0700 /tmp/.ansible-root",
       "sudo chown root:root /tmp/.ansible-root"
+    ]
+  }
+
+  provisioner "file" {
+    content     = file("${path.root}/${var.site_root_ca_file}")
+    destination = "/tmp/deevnet-site-root-ca.pem"
+  }
+
+  provisioner "shell" {
+    inline = [
+      "sudo install -m 0644 -o root -g root /tmp/deevnet-site-root-ca.pem /etc/pki/ca-trust/source/anchors/deevnet-mobile-root-ca.pem",
+      "rm -f /tmp/deevnet-site-root-ca.pem",
+      "sudo update-ca-trust extract",
+      # Fail the build if the store does not now verify it.
+      "openssl verify /etc/pki/ca-trust/source/anchors/deevnet-mobile-root-ca.pem",
     ]
   }
 

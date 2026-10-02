@@ -94,7 +94,7 @@ Output: `raspios-bookworm-mobile-pi-backend.img.xz`.
    `deevnet-kit-firstboot.service` runs once: host name, Wi-Fi (its password then blanked on the
    boot partition), CA, certificate, tokens, and the services start.
 4. `sudo deevnet-kit status`, then `sudo deevnet-kit export ~/deevnet-kit` for `kit.env` and
-   `site-ca.pem`.
+   `deevnet-kit-ca.pem`.
 
 `README.txt` sits beside `deevnet-kit.txt` on the boot partition, so the owner can read the
 instructions on a laptop before the first boot, and again at `/opt/deevnet-kit/README.txt`. The

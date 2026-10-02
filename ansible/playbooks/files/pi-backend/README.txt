@@ -107,7 +107,7 @@ file so it stays out of your shell history:
   shred -u backend.pw
 
 writes kit.env (every endpoint, token and login, including MQTT_USERNAME and
-MQTT_PASSWORD, under the same names the Deevnet guide uses) and site-ca.pem
+MQTT_PASSWORD, under the same names the Deevnet guide uses) and deevnet-kit-ca.pem
 (this card's CA). The password is checked against the account before it is
 written. An app that ran on Deevnet with a kit.env runs here with this one.
 
@@ -126,7 +126,7 @@ keep it, so the device needs only a new host and CA:
 Topic patterns are relative to your tenant, as on Deevnet. In the firmware,
 change the broker to this Pi's IP address (a Pico W cannot resolve .local
 names; give the Pi a fixed address on your router) and the CA to
-site-ca.pem. Everything else stays the same.
+deevnet-kit-ca.pem. Everything else stays the same.
 
 
 5. SEE YOUR LOGS
@@ -135,14 +135,14 @@ In a browser:  https://bench1.local:3000
 
 Sign in with the user and password in kit.env's GRAFANA_AUTH line
 (user:password). Your browser will warn about the certificate until you trust
-site-ca.pem. Open the "Start here" dashboard: a temperature graph (any device
+deevnet-kit-ca.pem. Open the "Start here" dashboard: a temperature graph (any device
 log line like {"temp_c": 21.5} shows up there), your device logs and your app
 logs. Explore -> "Device logs" searches everything.
 
 From a shell, the same logs:
 
   set -a; . ~/deevnet-kit/kit.env; set +a
-  curl -sS --cacert ~/deevnet-kit/site-ca.pem \
+  curl -sS --cacert ~/deevnet-kit/deevnet-kit-ca.pem \
     -H "Authorization: Bearer $LOG_READ_TOKEN" \
     -H "$LOG_SELECT_HEADER: $LOG_DEVICE_PARTITION" \
     "$LOG_ENDPOINT/select/logsql/query" --data-urlencode 'query=*'
@@ -158,7 +158,7 @@ and keeps nothing.
 The Terraform you used for dashboards on Deevnet applies here unchanged: the
 data sources have the same UIDs (deevnet-logs-workloads, -platform,
 -devices). Load kit.env into the environment, point GRAFANA_CA_CERT at
-site-ca.pem, and apply with a state of its own (not your Deevnet state).
+deevnet-kit-ca.pem, and apply with a state of its own (not your Deevnet state).
 Put org_id = var.grafana_org_id on every grafana_* resource.
 
 
