@@ -16,7 +16,8 @@ ceremony's signing tool so that the transfer media carries data only.
 | Users | the stock `pi` user removed; one user, `pki`, with no password, logged in on the console (tty1) only, `sudo` for mounting media and setting the clock; `root` locked |
 | Persistence | the root is a RAM overlay (`overlayroot=tmpfs`), and the boot partition is mounted read-only: nothing a ceremony does survives a reboot. Since nothing writes either partition, the boot skips the filesystem check (`fsck.mode=skip`) |
 | Clock | no `fake-hwclock`: a Pi 4 has no battery clock, so the date is obviously wrong until it is set, and `deevnet-pki-sign` refuses a date before the image's build date. A boot-time fsck at 1970 sees every build timestamp "in the future", the likely reason the first boot stopped at fsck, so the check is skipped |
-| Tools | `/usr/local/bin/deevnet-pki-sign` and `/usr/local/share/deevnet-pki/deevnet-pki.cnf`, from `ansible-collection-deevnet.mgmt/scripts/pki` at build |
+| Tools | `/usr/local/bin/deevnet-pki-sign`, `/usr/local/bin/deevnet-pki-media` and `/usr/local/share/deevnet-pki/deevnet-pki.cnf`, from `ansible-collection-deevnet.mgmt/scripts/pki` at build |
+| Media | `deevnet-pki-media` formats the key media as LUKS2-encrypted drives and the transfer media as plain FAT32, and opens and closes them (`cryptsetup-bin`, `dosfstools`, `parted` installed at build). A key drive opens with only the drive and its passphrase, on any Linux with cryptsetup |
 | Identity | `/etc/deevnet-pki-release`: image name, build date, tools commit |
 
 **What it is not.** It holds no key and no certificate. The Root CA's and Site CAs' keys live on
