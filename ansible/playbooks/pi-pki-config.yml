@@ -40,6 +40,14 @@
       - systemd-timesyncd.service
       - rpi-eeprom-update.service
       - userconfig.service
+      # A swap file in the RAM overlay only spends the RAM it would save.
+      - dphys-swapfile.service
+      # For SSH host keys; the image has no SSH.
+      - regenerate_ssh_host_keys.service
+      # /etc/machine-id is empty and the overlay makes /etc writable, so every
+      # boot is a "first boot", and this would prompt on the console for a
+      # locale, a timezone and a root password.
+      - systemd-firstboot.service
 
     # Installed for deevnet-pki-media: LUKS2 for the key media, FAT32 for the
     # transfer media.
@@ -89,6 +97,19 @@
         state: link
         force: true
       loop: "{{ masked_units }}"
+
+    # Stock Raspberry Pi OS grows the root on first boot with an LSB script,
+    # which then deletes itself. Under the RAM overlay / is not a device and
+    # nothing it deletes persists, so it failed on every boot ("Failed to start
+    # resize2fs_once.service", 2026-10-03). The build sizes the filesystem
+    # already: remove it the way it would have removed itself.
+    - name: Remove the first-boot root resize
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/{{ item }}"
+        state: absent
+      loop:
+        - etc/init.d/resize2fs_once
+        - etc/rc3.d/S01resize2fs_once
 
     - name: Purge SSH and the saved-clock service
       ansible.builtin.command:
@@ -185,6 +206,24 @@
           ExecStart=
           ExecStart=-/sbin/agetty --autologin {{ pki_user }} --noclear %I $TERM
         mode: "0644"
+
+    - name: Make the console login's wants directory
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/etc/systemd/system/getty.target.wants"
+        state: directory
+        mode: "0755"
+
+    # Stock Raspberry Pi OS leaves the console login off until its first-boot
+    # user wizard (userconfig, masked above) finishes and turns it on
+    # (/usr/bin/cancel-rename: systemctl enable getty@tty1). Without this the
+    # Pi boots to a screen with no login and waits forever (2026-10-03).
+    - name: Turn the console login on
+      ansible.builtin.file:
+        src: /lib/systemd/system/getty@.service
+        dest: "{{ chroot_root }}/etc/systemd/system/getty.target.wants/getty@tty1.service"
+        state: link
+        force: true
+        follow: false
 
     - name: Keep no shell history (commands are not secret, but nothing should persist)
       ansible.builtin.copy:
