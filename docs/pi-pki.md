@@ -14,8 +14,8 @@ ceremony's signing tool so that the transfer media carries data only.
 | Network | NetworkManager, wpa_supplicant, ModemManager, avahi, bluetooth and timesyncd masked |
 | Remote access | `openssh-server` purged; `ssh` and `sshswitch` masked |
 | Users | the stock `pi` user removed; one user, `pki`, with no password, logged in on the console (tty1) only, `sudo` for mounting media and setting the clock; `root` locked |
-| Persistence | the root is a RAM overlay (`overlayroot=tmpfs`), and the boot partition is mounted read-only: nothing a ceremony does survives a reboot |
-| Clock | no `fake-hwclock`: a Pi 4 has no battery clock, so the date is obviously wrong until it is set, and `deevnet-pki-sign` refuses a date before the image's build date |
+| Persistence | the root is a RAM overlay (`overlayroot=tmpfs`), and the boot partition is mounted read-only: nothing a ceremony does survives a reboot. Since nothing writes either partition, the boot skips the filesystem check (`fsck.mode=skip`) |
+| Clock | no `fake-hwclock`: a Pi 4 has no battery clock, so the date is obviously wrong until it is set, and `deevnet-pki-sign` refuses a date before the image's build date. A boot-time fsck at 1970 sees every build timestamp "in the future", the likely reason the first boot stopped at fsck, so the check is skipped |
 | Tools | `/usr/local/bin/deevnet-pki-sign` and `/usr/local/share/deevnet-pki/deevnet-pki.cnf`, from `ansible-collection-deevnet.mgmt/scripts/pki` at build |
 | Identity | `/etc/deevnet-pki-release`: image name, build date, tools commit |
 
