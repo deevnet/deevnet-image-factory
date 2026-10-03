@@ -103,13 +103,13 @@ variable "iso_download_pve" {
   default = false
 }
 
-# The site root CA (ADR-0030), from the inventory. Baked into the OS trust
+# The Deevnet Root CA (ADR-0031), from the inventory. Baked into the OS trust
 # store so a clone trusts it before Ansible reaches it. A public trust anchor,
 # not a credential, so the tenant flavor carries it too: tenant workloads dial
 # the API, the broker and the log store, all of which serve chains to it.
 variable "site_root_ca_file" {
   type    = string
-  default = "../../../../ansible-inventory-deevnet/pki/mobile/deevnet-mobile-root-ca.pem"
+  default = "../../../../ansible-inventory-deevnet/pki/deevnet-root-ca.pem"
 }
 
 variable "artifact_server_url" {
@@ -307,17 +307,17 @@ build {
 
   provisioner "file" {
     content     = file("${path.root}/${var.site_root_ca_file}")
-    destination = "/tmp/deevnet-site-root-ca.pem"
+    destination = "/tmp/deevnet-root-ca.pem"
   }
 
   provisioner "shell" {
     inline = [
-      "sudo install -m 0644 -o root -g root /tmp/deevnet-site-root-ca.pem /etc/pki/ca-trust/source/anchors/deevnet-mobile-root-ca.pem",
-      "rm -f /tmp/deevnet-site-root-ca.pem",
+      "sudo install -m 0644 -o root -g root /tmp/deevnet-root-ca.pem /etc/pki/ca-trust/source/anchors/deevnet-root-ca.pem",
+      "rm -f /tmp/deevnet-root-ca.pem",
       "sudo update-ca-trust extract",
       # Fail the build if the store does not now hold it. p11-kit's trust, not
       # openssl: a minimal install has no openssl CLI.
-      "trust list --filter=ca-anchors | grep -q 'label: Deevnet mobile root CA'",
+      "trust list --filter=ca-anchors | grep -q 'label: Deevnet Root CA'",
     ]
   }
 
