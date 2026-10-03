@@ -41,6 +41,13 @@
       - rpi-eeprom-update.service
       - userconfig.service
 
+    # Installed for deevnet-pki-media: LUKS2 for the key media, FAT32 for the
+    # transfer media.
+    media_packages:
+      - cryptsetup-bin
+      - dosfstools
+      - parted
+
     # Purged: what must not exist on the machine at all.
     purged_packages:
       - openssh-server
@@ -94,11 +101,11 @@
     # same). raspi-config's overlay switch reads the RUNNING kernel (uname -r),
     # which in this chroot is the build host's, so the initramfs is rebuilt for
     # the image's own kernels and the kernel command line is set here.
-    - name: Install overlayroot
+    - name: Install overlayroot, and the tools that prepare the media
       ansible.builtin.shell:
         cmd: >-
           chroot {{ chroot_root }} /usr/bin/apt-get update &&
-          chroot {{ chroot_root }} /usr/bin/apt-get install -y --no-install-recommends overlayroot &&
+          chroot {{ chroot_root }} /usr/bin/apt-get install -y --no-install-recommends overlayroot {{ media_packages | join(' ') }} &&
           chroot {{ chroot_root }} /usr/bin/apt-get clean
       changed_when: true
       environment: {DEBIAN_FRONTEND: noninteractive}
@@ -200,6 +207,12 @@
         dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-sign"
         mode: "0755"
 
+    - name: Install deevnet-pki-media
+      ansible.builtin.copy:
+        src: "{{ pki_tools_src }}/deevnet-pki-media"
+        dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-media"
+        mode: "0755"
+
     - name: Install the signing profile
       ansible.builtin.copy:
         src: "{{ pki_tools_src }}/deevnet-pki.cnf"
@@ -224,10 +237,15 @@
           No network. Nothing here survives a reboot. Runbook: Root of Trust.
 
             1. Set the clock:     sudo date -u -s 'YYYY-MM-DD HH:MM'
-            2. Mount the media:   key media and transfer media (lsblk; sudo mount)
+            2. The media:         sudo deevnet-pki-media list
+               first time only:   sudo deevnet-pki-media keys init /dev/sdX primary   (and backup)
+                                  sudo deevnet-pki-media transfer init /dev/sdY
+               every time:        sudo deevnet-pki-media keys open
+                                  sudo deevnet-pki-media transfer mount
             3. Root / Site CA:    the runbook's commands, profile at
                                   /usr/local/share/deevnet-pki/deevnet-pki.cnf
-               Issuing CA:        deevnet-pki-sign TRANSFER --site-key KEYMEDIA/deevnet-<site>-site-ca.key
+               Issuing CA:        deevnet-pki-sign /mnt/transfer --site-key /mnt/keys/deevnet-<site>-site-ca.key
+            4. Finish:            sudo deevnet-pki-media keys close; sudo deevnet-pki-media transfer umount
         mode: "0644"
 
     - name: Mark the image provisioned
