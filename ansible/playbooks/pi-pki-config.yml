@@ -118,12 +118,20 @@
         label: "{{ item.path | basename }}"
       changed_when: true
 
-    - name: Boot with the root overlaid in RAM, and without the first-boot wizard
+    # No boot-time filesystem check (fsck.mode=skip, read by the initramfs and
+    # by systemd-fsck). Nothing writes either partition after the build: the
+    # root is the read-only layer under a RAM overlay and the boot partition is
+    # mounted read-only. A check can only fail the boot. On a Pi with no
+    # battery clock the clock starts at 1970 and every timestamp the build
+    # wrote is "in the future": the likely reason the first real boot stopped
+    # at fsck (2026-10-03).
+    - name: Boot with the root overlaid in RAM, no fsck, and without the first-boot wizard
       ansible.builtin.shell:
         cmd: |
           f={{ boot_dir }}/cmdline.txt
-          sed -i -e 's# init=/usr/lib/raspberrypi-sys-mods/firstboot##' "$f"
+          sed -i -e 's# init=/usr/lib/raspberrypi-sys-mods/firstboot##' -e 's# fsck.repair=yes##' "$f"
           grep -q 'overlayroot=tmpfs' "$f" || sed -i -e 's#^#overlayroot=tmpfs #' "$f"
+          grep -q 'fsck.mode=skip' "$f" || sed -i -e 's#$# fsck.mode=skip#' "$f"
           cat "$f"
       register: _cmdline
       changed_when: true
