@@ -1,0 +1,237 @@
+---
+# The offline CA ceremony image (OFFLINE build, against the mounted image).
+#
+# A Raspberry Pi 4 that never joins a network: radios off in firmware, every
+# network service masked, no SSH, no automation account, one local user. It
+# carries the ceremony's signing tool and profile, so the transfer media
+# carries data only. Its root filesystem is read-only with a RAM overlay:
+# nothing a ceremony does survives a reboot. Runbook: Root of Trust.
+#
+# Usage (from the Makefile, target pi-pki-config):
+#   sudo ansible-playbook -i ansible/inventories/local.yml ansible/playbooks/pi-pki-config.yml \
+#     --extra-vars "chroot_root=/mnt/pi-pki-image pki_tools_src=... pki_tools_ref=..."
+
+- name: Configure the CA ceremony image (offline)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars:
+    chroot_root: "{{ chroot_root | default(omit) }}"
+    image_name: "pi-pki-bookworm"
+    pki_user: pki
+    boot_dir: "{{ chroot_root }}/boot/firmware"
+
+    # Masked, not just disabled: nothing can pull them back in.
+    masked_units:
+      - NetworkManager.service
+      - NetworkManager-wait-online.service
+      - NetworkManager-dispatcher.service
+      - wpa_supplicant.service
+      - ModemManager.service
+      - bluetooth.service
+      - hciuart.service
+      - avahi-daemon.service
+      - avahi-daemon.socket
+      - ssh.service
+      - ssh.socket
+      - sshswitch.service
+      - systemd-timesyncd.service
+      - rpi-eeprom-update.service
+      - userconfig.service
+
+    # Purged: what must not exist on the machine at all.
+    purged_packages:
+      - openssh-server
+      - fake-hwclock
+
+  pre_tasks:
+    - name: Assert chroot_root and the tools were given
+      ansible.builtin.assert:
+        that:
+          - chroot_root is defined and chroot_root | length > 1
+          - pki_tools_src is defined
+          - pki_tools_ref is defined
+
+    - name: Assert the image is mounted, root and boot
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ chroot_root }}/etc/os-release"
+        - "{{ boot_dir }}/config.txt"
+        - "{{ boot_dir }}/cmdline.txt"
+      register: _mounted
+      failed_when: not _mounted.stat.exists
+
+  tasks:
+    # --- No radios, no network ------------------------------------------------
+    - name: Turn Wi-Fi and Bluetooth off in firmware
+      ansible.builtin.blockinfile:
+        path: "{{ boot_dir }}/config.txt"
+        marker: "# {mark} deevnet pi-pki: no radios"
+        block: |
+          [all]
+          dtoverlay=disable-wifi
+          dtoverlay=disable-bt
+
+    - name: Mask every network and remote-access service
+      ansible.builtin.file:
+        src: /dev/null
+        dest: "{{ chroot_root }}/etc/systemd/system/{{ item }}"
+        state: link
+        force: true
+      loop: "{{ masked_units }}"
+
+    - name: Purge SSH and the saved-clock service
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/bin/apt-get purge -y {{ purged_packages | join(' ') }}"
+      changed_when: true
+      environment: {DEBIAN_FRONTEND: noninteractive}
+
+    # --- A read-only root, with a RAM overlay ----------------------------------
+    # Needs the package repositories at build time only (pi-backend does the
+    # same). raspi-config's overlay switch reads the RUNNING kernel (uname -r),
+    # which in this chroot is the build host's, so the initramfs is rebuilt for
+    # the image's own kernels and the kernel command line is set here.
+    - name: Install overlayroot
+      ansible.builtin.shell:
+        cmd: >-
+          chroot {{ chroot_root }} /usr/bin/apt-get update &&
+          chroot {{ chroot_root }} /usr/bin/apt-get install -y --no-install-recommends overlayroot &&
+          chroot {{ chroot_root }} /usr/bin/apt-get clean
+      changed_when: true
+      environment: {DEBIAN_FRONTEND: noninteractive}
+
+    - name: Find the image's own kernels
+      ansible.builtin.find:
+        paths: "{{ chroot_root }}/lib/modules"
+        file_type: directory
+        depth: 1
+      register: _kernels
+
+    - name: Rebuild the initramfs for each, with the overlay hook
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/sbin/update-initramfs -c -k {{ item.path | basename }}"
+      loop: "{{ _kernels.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      changed_when: true
+
+    - name: Boot with the root overlaid in RAM, and without the first-boot wizard
+      ansible.builtin.shell:
+        cmd: |
+          f={{ boot_dir }}/cmdline.txt
+          sed -i -e 's# init=/usr/lib/raspberrypi-sys-mods/firstboot##' "$f"
+          grep -q 'overlayroot=tmpfs' "$f" || sed -i -e 's#^#overlayroot=tmpfs #' "$f"
+          cat "$f"
+      register: _cmdline
+      changed_when: true
+
+    - name: Mount the boot partition read-only too
+      ansible.builtin.replace:
+        path: "{{ chroot_root }}/etc/fstab"
+        regexp: '^(\S+\s+/boot/firmware\s+vfat\s+)defaults'
+        replace: '\1defaults,ro'
+
+    # --- One local user ----------------------------------------------------------
+    - name: Remove the stock pi user
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} /usr/sbin/userdel -r pi"
+      register: _userdel
+      changed_when: _userdel.rc == 0
+      failed_when: _userdel.rc not in [0, 6]
+
+    - name: Create the ceremony user, with no password
+      ansible.builtin.shell:
+        cmd: >-
+          chroot {{ chroot_root }} /usr/sbin/useradd -m -s /bin/bash -G sudo,plugdev,video {{ pki_user }}
+          && chroot {{ chroot_root }} /usr/bin/passwd -d {{ pki_user }}
+          && chroot {{ chroot_root }} /usr/bin/passwd -l root
+        creates: "{{ chroot_root }}/home/{{ pki_user }}"
+
+    - name: Let it mount media and set the clock without a password
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/sudoers.d/010-pki"
+        content: "{{ pki_user }} ALL=(ALL) NOPASSWD: ALL\n"
+        mode: "0440"
+
+    - name: Make the console login drop-in directory
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/etc/systemd/system/getty@tty1.service.d"
+        state: directory
+        mode: "0755"
+
+    - name: Log it in on the console, and only there
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=-/sbin/agetty --autologin {{ pki_user }} --noclear %I $TERM
+        mode: "0644"
+
+    - name: Keep no shell history (commands are not secret, but nothing should persist)
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/profile.d/deevnet-pki.sh"
+        content: |
+          export HISTFILE=/dev/null
+          date -u '+Clock: %F %H:%M UTC - set it before any ceremony.'
+        mode: "0644"
+
+    # --- The ceremony tools ------------------------------------------------------
+    - name: Make the profile's directory
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/usr/local/share/deevnet-pki"
+        state: directory
+        mode: "0755"
+
+    - name: Install deevnet-pki-sign
+      ansible.builtin.copy:
+        src: "{{ pki_tools_src }}/deevnet-pki-sign"
+        dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-sign"
+        mode: "0755"
+
+    - name: Install the signing profile
+      ansible.builtin.copy:
+        src: "{{ pki_tools_src }}/deevnet-pki.cnf"
+        dest: "{{ chroot_root }}/usr/local/share/deevnet-pki/deevnet-pki.cnf"
+        mode: "0644"
+
+    - name: Record what this image is
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/deevnet-pki-release"
+        content: |
+          image={{ image_name }}
+          built={{ ansible_date_time.date }}
+          tools={{ pki_tools_ref }}
+        mode: "0644"
+
+    - name: Say what this machine is for
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/motd"
+        content: |
+
+          Deevnet offline CA ceremony machine ({{ image_name }}, built {{ ansible_date_time.date }})
+          No network. Nothing here survives a reboot. Runbook: Root of Trust.
+
+            1. Set the clock:     sudo date -u -s 'YYYY-MM-DD HH:MM'
+            2. Mount the media:   key media and transfer media (lsblk; sudo mount)
+            3. Root / Site CA:    the runbook's commands, profile at
+                                  /usr/local/share/deevnet-pki/deevnet-pki.cnf
+               Issuing CA:        deevnet-pki-sign TRANSFER --site-key KEYMEDIA/deevnet-<site>-site-ca.key
+        mode: "0644"
+
+    - name: Mark the image provisioned
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/packer-provisioned"
+        content: |
+          Image: {{ image_name }}
+          Build Date: {{ ansible_date_time.iso8601 }}
+          Tools: {{ pki_tools_ref }}
+          Ansible Version: {{ ansible_version.full }}
+        mode: "0644"
+
+    - name: Show the kernel command line it will boot with
+      ansible.builtin.debug:
+        msg: "{{ _cmdline.stdout }}"
