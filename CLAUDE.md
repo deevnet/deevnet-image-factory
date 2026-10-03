@@ -20,6 +20,12 @@ builds `fedora-tenant-<ver>` from the same Packer definition with `flavor=tenant
 removes `a_autoprov` and fails the build if any trace remains. Tenant workloads clone it and hold
 only their tenant's keys. Don't give it back an automation user.
 
+**`pi-pki` is the third** (`docs/pi-pki.md`): the offline CA ceremony machine, a Raspberry Pi 4.
+It is built from the **stock** Raspberry Pi OS Lite image, never the Packer step, so it never had
+`a_autoprov`. `pi-pki-config.yml` turns the radios off in firmware, masks every network service,
+purges SSH, makes the root read-only, and bakes in the ceremony tools. Never give it network
+access, SSH, an automation user, or a key.
+
 ### Platform-Specific Details
 
 **Raspberry Pi (ARM)**:

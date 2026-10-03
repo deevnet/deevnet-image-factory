@@ -159,6 +159,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: help init validate clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
+.PHONY: pi-pki pi-pki-image pi-pki-config pi-pki-compress pi-pki-publish
 .PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-backend-publish pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
 .PHONY: pve1-env pve2-env pve-env-clean
@@ -186,6 +187,8 @@ help:
 	@echo "  pi-backend             Build the take-home tenant backend image (MQTT + logs, no Deevnet access)"
 	@echo "  pi-backend-stage-upstream  Stage the arm64 VictoriaLogs/vmauth releases on the artifact server (sudo)"
 	@echo "  pi-backend-publish     Publish the built .img.xz to the tenant downloads tree (sudo)"
+	@echo "  pi-pki                 Build the offline CA ceremony image for a Raspberry Pi 4 (no network, tools baked in)"
+	@echo "  pi-pki-publish         Publish the ceremony image and its sha256 to the artifact server (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
 	@echo "  proxmox-fedora-pve1    ... on node $(PVE1_NODE), credentials from vault ($(PVE1_HOST))"
 	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE), credentials from vault ($(PVE2_HOST))"
@@ -670,6 +673,74 @@ $(PI_BOOKWORM_SSH_PUBKEY_FILE):
 	echo "$(GREEN)✓ SSH public key ready$(NC)"
 
 # Zip base image (archiver only supports zip)
+# ---------------------------------------------------------------------------
+# pi-pki: the offline CA ceremony machine (Raspberry Pi 4; runbook Root of Trust)
+#
+# Built from the STOCK Raspberry Pi OS Lite image, not pi-bookworm-image: that
+# step adds a_autoprov and its SSH key, which the ceremony machine must never
+# have. No network, no radios, no SSH, one local user; deevnet-pki-sign and its
+# profile baked in from ansible-collection-deevnet.mgmt/scripts/pki.
+# ---------------------------------------------------------------------------
+PI_PKI_IMAGE_NAME := raspios-bookworm-$(PI_IMAGE_PLATFORM)-pki
+PI_PKI_IMG        := $(CURDIR)/$(PI_PKI_IMAGE_NAME).img
+PI_PKI_MNT        := /mnt/pi-pki-image
+PI_PKI_TOOLS      := $(abspath $(CURDIR)/../ansible-collection-deevnet.mgmt/scripts/pki)
+PI_PKI_PUBLISH    := /srv/deevnet-http/pi-images/pki
+
+pi-pki: check-loop-devices pi-pki-image pi-pki-config pi-pki-compress
+	echo "$(GREEN)✓ Ceremony image: $(PI_PKI_IMG).xz (sha256 in $(PI_PKI_IMG).xz.sha256)$(NC)"
+
+pi-pki-image: $(PI_BOOKWORM_IMAGE_BASE)
+	echo "$(GREEN)→ Copying the stock Raspberry Pi OS Lite image...$(NC)"
+	sudo rm -f "$(PI_PKI_IMG)" "$(PI_PKI_IMG).xz" "$(PI_PKI_IMG).xz.sha256"
+	cp --sparse=always "$(PI_BOOKWORM_IMAGE_BASE)" "$(PI_PKI_IMG)"
+	: "4G: room for the overlay packages; first boot no longer expands it"
+	truncate -s 4G "$(PI_PKI_IMG)"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(PI_PKI_IMG)")"
+	trap 'sudo losetup -d "$$LOOPDEV" 2>/dev/null || true' EXIT
+	sudo partprobe "$$LOOPDEV"; sudo udevadm settle
+	sudo growpart "$$LOOPDEV" 2
+	sudo e2fsck -f -y "$${LOOPDEV}p2" || true
+	sudo resize2fs "$${LOOPDEV}p2"
+
+pi-pki-config: $(PI_PKI_IMG)
+	echo "$(GREEN)→ Configuring the ceremony image (offline Ansible)...$(NC)"
+	PLAYBOOK="$(CURDIR)/ansible/playbooks/pi-pki-config.yml"
+	INVENTORY="$(CURDIR)/ansible/inventories/local.yml"
+	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-sign" && -f "$(PI_PKI_TOOLS)/deevnet-pki.cnf" ]] \
+	  || { echo "$(RED)✗ No ceremony tools at $(PI_PKI_TOOLS)$(NC)"; exit 1; }
+	TOOLS_REF="$$(git -C "$(PI_PKI_TOOLS)" rev-parse --short HEAD)$$(git -C "$(PI_PKI_TOOLS)" diff --quiet -- . || echo -dirty)"
+	sudo umount -R "$(PI_PKI_MNT)" 2>/dev/null || true
+	sudo mkdir -p "$(PI_PKI_MNT)"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(PI_PKI_IMG)")"
+	trap 'sudo umount -R "$(PI_PKI_MNT)" 2>/dev/null || true; sudo losetup -d "$$LOOPDEV" 2>/dev/null || true' EXIT
+	sudo partprobe "$$LOOPDEV" 2>/dev/null || true; sudo partx -u "$$LOOPDEV" 2>/dev/null || true; sudo udevadm settle || true
+	for i in {1..10}; do [[ -b "$${LOOPDEV}p1" && -b "$${LOOPDEV}p2" ]] && break; sleep 0.2; done
+	[[ -b "$${LOOPDEV}p1" && -b "$${LOOPDEV}p2" ]] || { echo "$(RED)✗ Loop partitions missing$(NC)"; exit 1; }
+	sudo mount "$${LOOPDEV}p2" "$(PI_PKI_MNT)"
+	sudo mount "$${LOOPDEV}p1" "$(PI_PKI_MNT)/boot/firmware"
+	sudo mount --bind /dev "$(PI_PKI_MNT)/dev"
+	sudo mount -t proc proc "$(PI_PKI_MNT)/proc"
+	sudo mount -t sysfs sys "$(PI_PKI_MNT)/sys"
+	: "Package installs in the chroot need name resolution, for the build only"
+	sudo mount --bind /etc/resolv.conf "$(PI_PKI_MNT)/etc/resolv.conf"
+	sudo install -m 0755 /usr/bin/qemu-aarch64-static "$(PI_PKI_MNT)/usr/bin/qemu-aarch64-static"
+	sudo ansible-playbook -i "$$INVENTORY" "$$PLAYBOOK" \
+	  --extra-vars "chroot_root=$(PI_PKI_MNT) pki_tools_src=$(PI_PKI_TOOLS) pki_tools_ref=$$TOOLS_REF"
+	sudo umount "$(PI_PKI_MNT)/etc/resolv.conf"
+	sudo rm -f "$(PI_PKI_MNT)/usr/bin/qemu-aarch64-static"
+
+pi-pki-compress: $(PI_PKI_IMG)
+	echo "$(GREEN)→ Compressing...$(NC)"
+	sudo xz -f -k -6 -T0 "$(PI_PKI_IMG)"
+	cd "$(dir $(PI_PKI_IMG))" && sha256sum "$(notdir $(PI_PKI_IMG)).xz" | tee "$(notdir $(PI_PKI_IMG)).xz.sha256"
+
+pi-pki-publish:
+	[[ -f "$(PI_PKI_IMG).xz" ]] || { echo "$(RED)✗ No $(PI_PKI_IMG).xz: run make pi-pki$(NC)"; exit 1; }
+	sudo install -d -o nginx -g nginx -m 0755 "$(PI_PKI_PUBLISH)"
+	sudo install -o nginx -g nginx -m 0644 "$(PI_PKI_IMG).xz" "$(PI_PKI_IMG).xz.sha256" "$(PI_PKI_PUBLISH)/"
+	echo "$(GREEN)✓ Published $(PI_PKI_PUBLISH)/$(PI_PKI_IMAGE_NAME).img.xz$(NC)"
+
 $(PI_BOOKWORM_IMAGE_ZIP): $(PI_BOOKWORM_IMAGE_BASE)
 	echo "$(YELLOW)→ Creating zip archive of base image...$(NC)"
 	cd "$(dir $<)" && zip -0 "$(notdir $@)" "$(notdir $<)"
