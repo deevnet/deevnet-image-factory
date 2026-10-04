@@ -294,8 +294,8 @@
           and it stops for each passphrase and for the paper record. Answering n at
           any prompt stops it safely.
 
-          Signing an issuing CA is a later session: deevnet-pki-sign.sh, on the
-          runbook's Issuing CA page.
+          The script has three paths: a new root and Site CA; a Site CA only; and
+          signing an issuing CA from a request the Builder put on the transfer drive.
         mode: "0644"
 
     - name: Mark the image provisioned
