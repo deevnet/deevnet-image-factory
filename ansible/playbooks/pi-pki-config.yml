@@ -282,22 +282,20 @@
         content: |
 
           Deevnet offline CA ceremony machine ({{ image_name }}, built {{ ansible_date_time.date }})
-          No network. Nothing here survives a reboot. Runbook: Root of Trust.
+          No network, and nothing here survives a reboot.
+          Runbook: Root of Trust > Root and Site CA Ceremony.
 
-            Root CA and Site CA, step by step:   ./deevnet-pki-ceremony.sh
-            (set the clock first; it does the rest, asking before each step)
+            1. Set the clock, in UTC:   sudo date -u -s 'YYYY-MM-DD HH:MM'
+            2. Run the ceremony:        ./deevnet-pki-ceremony.sh
 
-            By hand, as the runbook does:
-            1. Set the clock:     sudo date -u -s 'YYYY-MM-DD HH:MM'
-            2. The media:         sudo deevnet-pki-media.sh list
-               first time only:   sudo deevnet-pki-media.sh keys init /dev/sdX primary   (and backup)
-                                  sudo deevnet-pki-media.sh transfer init /dev/sdY
-               every time:        sudo deevnet-pki-media.sh keys open
-                                  sudo deevnet-pki-media.sh transfer mount
-            3. Root / Site CA:    the runbook's commands, profile at
-                                  /usr/local/share/deevnet-pki/deevnet-pki.cnf
-               Issuing CA:        deevnet-pki-sign.sh /mnt/transfer --site-key /mnt/keys/deevnet-<site>-site-ca.key
-            4. Finish:            sudo deevnet-pki-media.sh keys close; sudo deevnet-pki-media.sh transfer umount
+          Start with no USB drives plugged in. The script guides the whole session:
+          before each step it says what that step does and waits for your go-ahead;
+          it tells you when to plug in each drive and recognizes which one arrived;
+          and it stops for each passphrase and for the paper record. Answering n at
+          any prompt stops it safely.
+
+          Signing an issuing CA is a later session: deevnet-pki-sign.sh, on the
+          runbook's Issuing CA page.
         mode: "0644"
 
     - name: Mark the image provisioned
