@@ -678,7 +678,7 @@ $(PI_BOOKWORM_SSH_PUBKEY_FILE):
 #
 # Built from the STOCK Raspberry Pi OS Lite image, not pi-bookworm-image: that
 # step adds a_autoprov and its SSH key, which the ceremony machine must never
-# have. No network, no radios, no SSH, one local user; deevnet-pki-sign and its
+# have. No network, no radios, no SSH, one local user; deevnet-pki-sign.sh and its
 # profile baked in from ansible-collection-deevnet.mgmt/scripts/pki.
 # ---------------------------------------------------------------------------
 PI_PKI_IMAGE_NAME := raspios-bookworm-$(PI_IMAGE_PLATFORM)-pki
@@ -707,7 +707,7 @@ pi-pki-config: $(PI_PKI_IMG)
 	echo "$(GREEN)→ Configuring the ceremony image (offline Ansible)...$(NC)"
 	PLAYBOOK="$(CURDIR)/ansible/playbooks/pi-pki-config.yml"
 	INVENTORY="$(CURDIR)/ansible/inventories/local.yml"
-	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-sign" && -x "$(PI_PKI_TOOLS)/deevnet-pki-media" && -x "$(PI_PKI_TOOLS)/deevnet-pki-ceremony" && -f "$(PI_PKI_TOOLS)/deevnet-pki.cnf" ]] \
+	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-sign.sh" && -x "$(PI_PKI_TOOLS)/deevnet-pki-media.sh" && -x "$(PI_PKI_TOOLS)/deevnet-pki-ceremony.sh" && -f "$(PI_PKI_TOOLS)/deevnet-pki.cnf" ]] \
 	  || { echo "$(RED)✗ No ceremony tools at $(PI_PKI_TOOLS)$(NC)"; exit 1; }
 	TOOLS_REF="$$(git -C "$(PI_PKI_TOOLS)" rev-parse --short HEAD)$$(git -C "$(PI_PKI_TOOLS)" diff --quiet -- . || echo -dirty)"
 	sudo umount -R "$(PI_PKI_MNT)" 2>/dev/null || true
