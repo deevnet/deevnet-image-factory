@@ -252,6 +252,15 @@
         dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-media"
         mode: "0755"
 
+    # In the pki user's home, as the first thing the operator sees.
+    - name: Install deevnet-pki-ceremony in the pki user's home
+      ansible.builtin.copy:
+        src: "{{ pki_tools_src }}/deevnet-pki-ceremony"
+        dest: "{{ chroot_root }}/home/{{ pki_user }}/deevnet-pki-ceremony"
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+
     - name: Install the signing profile
       ansible.builtin.copy:
         src: "{{ pki_tools_src }}/deevnet-pki.cnf"
@@ -275,6 +284,10 @@
           Deevnet offline CA ceremony machine ({{ image_name }}, built {{ ansible_date_time.date }})
           No network. Nothing here survives a reboot. Runbook: Root of Trust.
 
+            Root CA and Site CA, step by step:   ./deevnet-pki-ceremony
+            (set the clock first; it does the rest, asking before each step)
+
+            By hand, as the runbook does:
             1. Set the clock:     sudo date -u -s 'YYYY-MM-DD HH:MM'
             2. The media:         sudo deevnet-pki-media list
                first time only:   sudo deevnet-pki-media keys init /dev/sdX primary   (and backup)
