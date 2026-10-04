@@ -49,7 +49,7 @@
       # locale, a timezone and a root password.
       - systemd-firstboot.service
 
-    # Installed for deevnet-pki-media: LUKS2 for the key media, FAT32 for the
+    # Installed for deevnet-pki-media.sh: LUKS2 for the key media, FAT32 for the
     # transfer media.
     media_packages:
       - cryptsetup-bin
@@ -240,23 +240,23 @@
         state: directory
         mode: "0755"
 
-    - name: Install deevnet-pki-sign
+    - name: Install deevnet-pki-sign.sh
       ansible.builtin.copy:
-        src: "{{ pki_tools_src }}/deevnet-pki-sign"
-        dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-sign"
+        src: "{{ pki_tools_src }}/deevnet-pki-sign.sh"
+        dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-sign.sh"
         mode: "0755"
 
-    - name: Install deevnet-pki-media
+    - name: Install deevnet-pki-media.sh
       ansible.builtin.copy:
-        src: "{{ pki_tools_src }}/deevnet-pki-media"
-        dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-media"
+        src: "{{ pki_tools_src }}/deevnet-pki-media.sh"
+        dest: "{{ chroot_root }}/usr/local/bin/deevnet-pki-media.sh"
         mode: "0755"
 
     # In the pki user's home, as the first thing the operator sees.
-    - name: Install deevnet-pki-ceremony in the pki user's home
+    - name: Install deevnet-pki-ceremony.sh in the pki user's home
       ansible.builtin.copy:
-        src: "{{ pki_tools_src }}/deevnet-pki-ceremony"
-        dest: "{{ chroot_root }}/home/{{ pki_user }}/deevnet-pki-ceremony"
+        src: "{{ pki_tools_src }}/deevnet-pki-ceremony.sh"
+        dest: "{{ chroot_root }}/home/{{ pki_user }}/deevnet-pki-ceremony.sh"
         owner: "1000"
         group: "1000"
         mode: "0755"
@@ -284,20 +284,20 @@
           Deevnet offline CA ceremony machine ({{ image_name }}, built {{ ansible_date_time.date }})
           No network. Nothing here survives a reboot. Runbook: Root of Trust.
 
-            Root CA and Site CA, step by step:   ./deevnet-pki-ceremony
+            Root CA and Site CA, step by step:   ./deevnet-pki-ceremony.sh
             (set the clock first; it does the rest, asking before each step)
 
             By hand, as the runbook does:
             1. Set the clock:     sudo date -u -s 'YYYY-MM-DD HH:MM'
-            2. The media:         sudo deevnet-pki-media list
-               first time only:   sudo deevnet-pki-media keys init /dev/sdX primary   (and backup)
-                                  sudo deevnet-pki-media transfer init /dev/sdY
-               every time:        sudo deevnet-pki-media keys open
-                                  sudo deevnet-pki-media transfer mount
+            2. The media:         sudo deevnet-pki-media.sh list
+               first time only:   sudo deevnet-pki-media.sh keys init /dev/sdX primary   (and backup)
+                                  sudo deevnet-pki-media.sh transfer init /dev/sdY
+               every time:        sudo deevnet-pki-media.sh keys open
+                                  sudo deevnet-pki-media.sh transfer mount
             3. Root / Site CA:    the runbook's commands, profile at
                                   /usr/local/share/deevnet-pki/deevnet-pki.cnf
-               Issuing CA:        deevnet-pki-sign /mnt/transfer --site-key /mnt/keys/deevnet-<site>-site-ca.key
-            4. Finish:            sudo deevnet-pki-media keys close; sudo deevnet-pki-media transfer umount
+               Issuing CA:        deevnet-pki-sign.sh /mnt/transfer --site-key /mnt/keys/deevnet-<site>-site-ca.key
+            4. Finish:            sudo deevnet-pki-media.sh keys close; sudo deevnet-pki-media.sh transfer umount
         mode: "0644"
 
     - name: Mark the image provisioned
