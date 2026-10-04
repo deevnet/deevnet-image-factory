@@ -707,7 +707,7 @@ pi-pki-config: $(PI_PKI_IMG)
 	echo "$(GREEN)→ Configuring the ceremony image (offline Ansible)...$(NC)"
 	PLAYBOOK="$(CURDIR)/ansible/playbooks/pi-pki-config.yml"
 	INVENTORY="$(CURDIR)/ansible/inventories/local.yml"
-	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-sign" && -x "$(PI_PKI_TOOLS)/deevnet-pki-media" && -f "$(PI_PKI_TOOLS)/deevnet-pki.cnf" ]] \
+	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-sign" && -x "$(PI_PKI_TOOLS)/deevnet-pki-media" && -x "$(PI_PKI_TOOLS)/deevnet-pki-ceremony" && -f "$(PI_PKI_TOOLS)/deevnet-pki.cnf" ]] \
 	  || { echo "$(RED)✗ No ceremony tools at $(PI_PKI_TOOLS)$(NC)"; exit 1; }
 	TOOLS_REF="$$(git -C "$(PI_PKI_TOOLS)" rev-parse --short HEAD)$$(git -C "$(PI_PKI_TOOLS)" diff --quiet -- . || echo -dirty)"
 	sudo umount -R "$(PI_PKI_MNT)" 2>/dev/null || true
