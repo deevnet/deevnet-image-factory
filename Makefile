@@ -84,9 +84,12 @@ PACKER_EXTRA_ARGS ?=
 
 # Fetch one hypervisor's credentials into THIS recipe's environment.
 # $(1) = inventory host, $(2) = node name. The recipes run in one shell
-# (.ONESHELL), so the exports reach the packer command below them.
+# (.ONESHELL), so the exports reach the packer command below them. The fetch is
+# assigned first: under -e a failed fetch stops the recipe, where eval "$$(...)"
+# would carry on to packer with no credentials.
 define pve_creds
-eval "$$($(PVE_CREDS) $(1) $(2))"
+PVE_EXPORTS="$$($(PVE_CREDS) $(1) $(2))"
+eval "$$PVE_EXPORTS"
 endef
 
 # ------------------------------------------------------------
