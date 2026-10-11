@@ -16,6 +16,7 @@ fedora-*-manifest.json
 *.img
 *.img.gz
 *.img.xz
+*.img.xz.sha256
 *.zip
 
 # Explicit Pi image paths (belt + suspenders)
