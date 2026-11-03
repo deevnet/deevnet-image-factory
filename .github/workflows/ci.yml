@@ -1,0 +1,21 @@
+# Checks on every pull request: every Packer configuration parses. Syntax
+# only, so no variables, secrets, Proxmox or ARM builder plugin are needed;
+# `make validate` on the Builder is the full check.
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  packer-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-packer@v3
+      - run: make check

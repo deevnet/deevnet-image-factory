@@ -159,7 +159,7 @@ PVE_DISK_SERIAL ?=
 PVE_ISO_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/output
 PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 
-.PHONY: help init validate clean check-deps check-loop-devices
+.PHONY: help init validate check clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
 .PHONY: pi-pki pi-pki-image pi-pki-config pi-pki-compress pi-pki-publish
@@ -212,6 +212,7 @@ help:
 	@echo ""
 	@echo "Utilities:"
 	@echo "  validate               Validate all Packer configurations"
+	@echo "  check                  Syntax-check all Packer configurations (no secrets or plugins; CI runs this)"
 	@echo "  check-deps             Check for required build dependencies"
 	@echo "  check-loop-devices     Verify loop devices exist"
 	@echo "  clean                  Remove build artifacts"
@@ -233,8 +234,14 @@ init-proxmox:
 # Validation
 # ------------------------------------------------------------
 validate:
-	cd packer/pi && packer validate sdr-bookworm.pkr.hcl
-	cd packer/proxmox/fedora-base-image && packer validate -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+	cd $(CURDIR)/packer/pi && packer validate sdr-bookworm.pkr.hcl
+	cd $(CURDIR)/packer/proxmox/fedora-base-image && packer validate -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+
+# Syntax only: needs no variables, no Proxmox and no ARM builder plugin, so it
+# runs anywhere. `validate` is the full check.
+check:
+	cd $(CURDIR)/packer/pi && packer validate -syntax-only sdr-bookworm.pkr.hcl
+	cd $(CURDIR)/packer/proxmox/fedora-base-image && packer validate -syntax-only fedora.pkr.hcl
 
 # ------------------------------------------------------------
 # Pi builds
