@@ -474,8 +474,11 @@ PI_BACKEND_IMAGE_NAME := raspios-bookworm-$(PI_IMAGE_PLATFORM)-$(PI_BACKEND_IMAG
 PI_BACKEND_AUTOPROV_IMG := $(CURDIR)/$(PI_BACKEND_IMAGE_NAME).img
 PI_BACKEND_INPUTS := $(CURDIR)/build/pi-backend
 
-# Deevnet's own builds, staged by each repo's `make stage-pi`.
-PI_BACKEND_DEEVNET_BINARIES := deevnet-kit deevnet-log-user deevnet-log-bridge
+# Deevnet's own builds, staged by each repo's `make stage-pi`, each pinned to
+# the exact file it installs (<binary>:<version>). Staging a new build changes
+# nothing here until its version is bumped. The log bridge's is one commit past
+# its v0.1.1 tag: what -latest pointed at when pinned.
+PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.15.0 deevnet-log-user:v0.15.0 deevnet-log-bridge:v0.1.1-1-g20abb75
 
 # Upstream releases, pinned to the versions Deevnet's log store runs
 # (deevnet.mgmt victorialogs role). The checksums are the release's own.
@@ -540,13 +543,14 @@ pi-backend-publish:
 	cd "$$DEST" && sha256sum "$(PI_BACKEND_IMAGE_NAME).img.xz" | sudo tee "$(PI_BACKEND_IMAGE_NAME).img.xz.sha256" >/dev/null
 	echo "$(GREEN)✓ Published $$DEST/$(PI_BACKEND_IMAGE_NAME).img.xz$(NC)"
 
-# Fetch every binary the image installs. Always refetched: "latest" moves.
+# Fetch every binary the image installs, at its pinned version.
 pi-backend-inputs:
 	echo "$(YELLOW)→ Fetching pi-backend inputs from artifacts...$(NC)"
 	rm -rf "$(PI_BACKEND_INPUTS)"
 	mkdir -p "$(PI_BACKEND_INPUTS)/tmp"
-	for b in $(PI_BACKEND_DEEVNET_BINARIES); do
-	  curl -fsSL -o "$(PI_BACKEND_INPUTS)/$$b" "$(ARTIFACT_URL)/binaries/$$b/$$b-latest-linux-arm64"
+	for bv in $(PI_BACKEND_DEEVNET_BINARIES); do
+	  b="$${bv%%:*}"; v="$${bv#*:}"
+	  curl -fsSL -o "$(PI_BACKEND_INPUTS)/$$b" "$(ARTIFACT_URL)/binaries/$$b/$$b-$$v-linux-arm64"
 	  file "$(PI_BACKEND_INPUTS)/$$b" | grep -q 'ARM aarch64' || { echo "$(RED)✗ $$b is not an arm64 binary$(NC)"; exit 1; }
 	done
 	cd "$(PI_BACKEND_INPUTS)/tmp"
