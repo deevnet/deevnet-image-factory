@@ -98,6 +98,12 @@ Output: `raspios-bookworm-mobile-pi-backend.img.xz`.
 4. `sudo deevnet-kit status`, then `sudo deevnet-kit export ~/deevnet-kit` for `kit.env` and
    `deevnet-kit-ca.pem`.
 
+**A card never starts before the day its image was built.** A Pi has no clock battery, and
+`fake-hwclock` restores the build's time on a new card. First boot and Grafana then wait for NTP
+(`systemd-time-wait-sync`) for 90 seconds at most: the card's CA and certificate start today, and
+Grafana checks its plugins' signatures against a clock that is right. With no NTP server in reach,
+they start 90 seconds later on the restored time.
+
 `README.txt` sits beside `deevnet-kit.txt` on the boot partition, so the owner can read the
 instructions on a laptop before the first boot, and again at `/opt/deevnet-kit/README.txt`. The
 login message (`/etc/motd`) points there.

@@ -375,6 +375,42 @@
         force: true
       loop: "{{ pi_backend_units }}"
 
+    # ------------------------------------------------------------
+    # The clock (CHG-0056)
+    # ------------------------------------------------------------
+    # A Pi has no clock battery: fake-hwclock restores the time it saved at
+    # the last shutdown, which on a new card is whatever the base image left,
+    # a year in the past. The build's own time instead, so a card never starts
+    # before the day its image was built, with or without a network.
+    - name: Start every card's clock at the build's time
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/etc/fake-hwclock.data"
+        content: "{{ now(utc=true, fmt='%Y-%m-%d %H:%M:%S') }}\n"
+        mode: "0644"
+        owner: root
+        group: root
+
+    # time-sync.target then means the clock is set, for 90 seconds at most;
+    # Grafana and first boot start after it.
+    - name: Create the time-wait-sync drop-in directory
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/etc/systemd/system/systemd-time-wait-sync.service.d"
+        state: directory
+        mode: "0755"
+
+    - name: Bound the wait for NTP
+      ansible.builtin.copy:
+        src: files/pi-backend/time-wait-sync-deevnet-kit.conf
+        dest: "{{ chroot_root }}/etc/systemd/system/systemd-time-wait-sync.service.d/deevnet-kit.conf"
+        mode: "0644"
+
+    - name: Enable the wait for NTP
+      ansible.builtin.file:
+        src: /lib/systemd/system/systemd-time-wait-sync.service
+        dest: "{{ chroot_root }}/etc/systemd/system/sysinit.target.wants/systemd-time-wait-sync.service"
+        state: link
+        force: true
+
     - name: Check mosquitto is enabled by its package
       ansible.builtin.stat:
         path: "{{ chroot_root }}/etc/systemd/system/multi-user.target.wants/mosquitto.service"
