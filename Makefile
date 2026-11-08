@@ -612,6 +612,10 @@ pi-backend-config: $(PI_BACKEND_AUTOPROV_IMG)
 	[[ -f "$$PLAYBOOK" ]]  || { echo "$(RED)✗ Missing playbook: $$PLAYBOOK$(NC)"; exit 1; }
 	[[ -f "$$INVENTORY" ]] || { echo "$(RED)✗ Missing inventory: $$INVENTORY$(NC)"; exit 1; }
 	[[ -d "$(PI_BACKEND_INPUTS)" ]] || { echo "$(RED)✗ No inputs: run make pi-backend-inputs$(NC)"; exit 1; }
+	: "The owner's starter PKI tools (ADR-0041 §3), from the deevnet.mgmt checkout beside this one"
+	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-owner.sh" && -x "$(PI_PKI_TOOLS)/deevnet-pki-media.sh" && -f "$(PI_PKI_TOOLS)/deevnet-pki-owner.cnf" ]] \
+	  || { echo "$(RED)✗ No owner PKI tools at $(PI_PKI_TOOLS)$(NC)"; exit 1; }
+	TOOLS_REF="$$(git -C "$(PI_PKI_TOOLS)" rev-parse --short HEAD)$$(git -C "$(PI_PKI_TOOLS)" diff --quiet -- . || echo -dirty)"
 
 	: "Pre-clean any leftover mounts from a prior failed run"
 	sudo umount -R "$(PI_BOOKWORM_MNT)" 2>/dev/null || true
@@ -661,7 +665,7 @@ pi-backend-config: $(PI_BACKEND_AUTOPROV_IMG)
 	sudo ansible-playbook \
 	  -i "$$INVENTORY" \
 	  "$$PLAYBOOK" \
-	  --extra-vars "chroot_root=$(PI_BOOKWORM_MNT) pi_backend_inputs=$(PI_BACKEND_INPUTS)"
+	  --extra-vars "chroot_root=$(PI_BOOKWORM_MNT) pi_backend_inputs=$(PI_BACKEND_INPUTS) pki_tools_src=$(PI_PKI_TOOLS) pki_tools_ref=$$TOOLS_REF"
 
 	: "The emulator is a build tool, not part of the owner's image"
 	sudo rm -f "$(PI_BOOKWORM_MNT)/usr/bin/qemu-aarch64-static"
