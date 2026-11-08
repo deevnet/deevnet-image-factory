@@ -26,10 +26,9 @@ make proxmox-fedora
 ```
 
 Nothing is written to disk: `scripts/pve-creds` prints the exports and the caller
-evals them. By default it reads OpenBao as the image-factory AppRole
-(`image-factory/proxmox/<node>`); `PVE_CREDS_SOURCE=inventory` reads the
-inventory vault instead, for when OpenBao is down. Both need the ansible-vault
-password - set `ANSIBLE_VAULT_PASSWORD_FILE` or answer the prompt.
+evals them. It reads the hypervisor's token from the inventory vault; builds do
+not depend on OpenBao (CHG-0037). It needs the ansible-vault password - set
+`ANSIBLE_VAULT_PASSWORD_FILE` or answer the prompt.
 
 ## Manual credentials
 
@@ -73,5 +72,5 @@ Template is stored directly in Proxmox (not as a local file).
 
 - `packer/proxmox/fedora-base-image/fedora.pkr.hcl` - Packer template definition
 - `packer/proxmox/fedora-base-image/fedora-*.pkrvars.hcl` - per-release variables
-- `scripts/pve-creds` - prints TF_VAR_proxmox_* exports from OpenBao or the inventory vault; never writes a file
+- `scripts/pve-creds` - prints TF_VAR_proxmox_* exports from the inventory vault; never writes a file
 - `packer/proxmox/fedora-base-image/http/kickstart.cfg.pkrtpl` - Kickstart configuration

@@ -46,8 +46,7 @@ Run `make help` for the full target list.
 ### Building Proxmox Templates
 
 Preferred: the per-node Make targets. They fetch the node's API token per run
-with `scripts/pve-creds` - from OpenBao as the image-factory AppRole (CHG-0026),
-or with `PVE_CREDS_SOURCE=inventory` straight from the inventory vault - and
+with `scripts/pve-creds`, from the inventory vault (CHG-0037), and
 eval it into the recipe's environment. **Never render a credential to a file**;
 nothing in this repo writes one. They also select the node's storage pool.
 

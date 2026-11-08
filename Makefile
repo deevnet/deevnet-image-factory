@@ -52,14 +52,12 @@ ARTIFACT_URL := http://artifacts.mobile.deevnet.net
 #   eval "`make -s pve2-env`"     # export into the current shell
 #   make proxmox-fedora-pve2      # or let the build target fetch them itself
 #
-# Source: PVE_CREDS_SOURCE=openbao (default: the image-factory AppRole reads
-# image-factory/proxmox/<node>, CHG-0026) or inventory (the vault itself, when
-# OpenBao is down). Either way the inventory is needed, for the vault password:
-# set ANSIBLE_VAULT_PASSWORD_FILE, or answer the prompt.
+# Source: the hypervisor's host_vars in the inventory vault, the authoritative
+# copy. Builds do not read OpenBao, which is sealed outside work sessions
+# (CHG-0037). Set ANSIBLE_VAULT_PASSWORD_FILE, or answer the prompt.
 DEEVNET_INVENTORY ?= $(CURDIR)/../ansible-inventory-deevnet/mobile
 PVE_CREDS         := $(CURDIR)/scripts/pve-creds
-PVE_CREDS_SOURCE  ?= openbao
-export DEEVNET_INVENTORY PVE_CREDS_SOURCE
+export DEEVNET_INVENTORY
 
 # Inventory host -> Proxmox node name. These are now the same string on both
 # hypervisors - the node was renamed to match its inventory name - but the pair
