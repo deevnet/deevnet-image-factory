@@ -183,13 +183,18 @@ source "proxmox-iso" "fedora-kickstart" {
   http_port_min     = 8487
   http_port_max     = 8487
 
-  # Boot sequence for Fedora kickstart installation
+  # Boot sequence for Fedora kickstart installation, typed into the GRUB
+  # console over Proxmox's VNC. At Packer's default key interval keys were
+  # dropped on dv02hyp002p02 ("imaboot" for images/pxeboot), and a line typed
+  # while GRUB was still loading the previous file was lost (a kernel panic
+  # with no initrd). Type slowly, and wait out each load.
+  boot_key_interval = "200ms"
   boot_command = [
     "<wait5>",
-    "c<wait>",
-    "<enter><wait>",
-    "linux (cd)/images/pxeboot/vmlinuz ${local.boot_ip} rd.neednet=1 inst.stage2=cdrom inst.repo=cdrom inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/kickstart.cfg<enter><wait5>",
-    "initrd (cd)/images/pxeboot/initrd.img<enter><wait15>",
+    "c<wait3>",
+    "<enter><wait3>",
+    "linux (cd)/images/pxeboot/vmlinuz ${local.boot_ip} rd.neednet=1 inst.stage2=cdrom inst.repo=cdrom inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/kickstart.cfg<enter><wait15>",
+    "initrd (cd)/images/pxeboot/initrd.img<enter><wait45>",
     "boot<enter>"
   ]
   boot_wait = "10s"
