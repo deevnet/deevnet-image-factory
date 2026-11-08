@@ -8,13 +8,15 @@ in the Deevnet inventory.
 
 ## Build
 
-The `proxmox-fedora-pve1` / `proxmox-fedora-pve2` targets read the API token
+Every substrate VM is on `dv02hyp001p01` and only tenant workloads are on
+`dv02hyp002p02`, so each gets the flavor it runs; `proxmox-fedora-pve2` (a
+substrate template on the tenant hypervisor) is not needed. The targets read the API token
 out of `host_vars/<host>/vault.yml` in the Deevnet inventory, so nothing has to
 be exported by hand. They also select the right disk storage pool for that node.
 
 ```bash
-make proxmox-fedora-pve2                      # Fedora 44 on node pve2 (hv02)
-make proxmox-fedora-pve1 FEDORA_RELEASE=43    # Fedora 43 on node pve  (hv01)
+make proxmox-fedora-pve1                      # substrate template on dv02hyp001p01
+make proxmox-fedora-tenant                    # tenant template on dv02hyp002p02
 ```
 
 To use the credentials elsewhere (or with the plain `proxmox-fedora` target),

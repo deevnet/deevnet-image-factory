@@ -51,11 +51,17 @@ eval it into the recipe's environment. **Never render a credential to a file**;
 nothing in this repo writes one. They also select the node's storage pool.
 
 ```bash
-make proxmox-fedora-pve2                      # Fedora 44 on node pve2 (hv02)
-make proxmox-fedora-pve1 FEDORA_RELEASE=43    # Fedora 43 on node pve  (hv01)
+make proxmox-fedora-pve1                      # substrate template on dv02hyp001p01
+make proxmox-fedora-tenant                    # tenant template on dv02hyp002p02
 
-eval "$(make -s pve2-env)"                    # or export into the current shell
+eval "$(make -s pve1-env)"                    # or export into the current shell
 ```
+
+**Each hypervisor gets the flavor it runs.** Every substrate VM is on `dv02hyp001p01`, so the
+substrate template (`fedora-server-*`) belongs there; `dv02hyp002p02` runs tenant workloads only,
+so it gets the tenant template (`fedora-tenant-*`). `make proxmox-fedora-pve2` builds a substrate
+template on the tenant hypervisor, which nothing clones. A rebuild leaves the old template beside
+the new one under the same name: delete the old one once nothing is a linked clone of it.
 
 Direct packer invocation still works if `TF_VAR_proxmox_*` are exported.
 

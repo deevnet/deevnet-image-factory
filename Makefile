@@ -192,7 +192,7 @@ help:
 	@echo "  pi-pki-publish         Publish the ceremony image and its sha256 to the artifact server (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
 	@echo "  proxmox-fedora-pve1    ... on node $(PVE1_NODE), credentials from vault ($(PVE1_HOST))"
-	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE), credentials from vault ($(PVE2_HOST))"
+	@echo "  proxmox-fedora-pve2    ... on node $(PVE2_NODE): not needed, it runs tenant workloads only"
 	@echo "  proxmox-fedora-tenant  Tenant workload template (no a_autoprov) on $(PVE2_NODE)"
 	@echo ""
 	@echo "Proxmox credentials (from the Deevnet inventory vault):"
