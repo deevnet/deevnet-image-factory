@@ -8,9 +8,10 @@
 [Unit]
 Description=deevnet-kit first boot (tenant, CA, tokens)
 ConditionPathExists=!/etc/deevnet-kit/kit.json
-# Online first, so the certificate names the address devices will dial.
-Wants=network-online.target
-After=local-fs.target network-online.target
+# Online first, so the certificate names the address devices will dial; and
+# after the clock is set, so the card's CA and certificate start today.
+Wants=network-online.target time-sync.target
+After=local-fs.target network-online.target time-sync.target
 Before=mosquitto.service vmauth.service deevnet-log-bridge.service grafana.service
 
 [Service]

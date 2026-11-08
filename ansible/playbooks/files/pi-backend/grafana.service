@@ -8,8 +8,12 @@
 [Unit]
 Description=Grafana, the tenant's dashboards (deevnet-kit)
 ConditionPathExists=/etc/deevnet-kit/kit.json
-Wants=network-online.target
-After=deevnet-kit-firstboot.service network-online.target
+# After the clock is set: Grafana checks its plugins' signatures against it,
+# and on a clock in the past it refuses every signed plugin, VictoriaLogs'
+# included, until it is restarted (CHG-0056). time-sync.target waits for NTP
+# through systemd-time-wait-sync, for 90 seconds at most.
+Wants=network-online.target time-sync.target
+After=deevnet-kit-firstboot.service network-online.target time-sync.target
 
 [Service]
 User=grafana

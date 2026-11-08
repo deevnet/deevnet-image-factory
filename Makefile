@@ -478,7 +478,7 @@ PI_BACKEND_INPUTS := $(CURDIR)/build/pi-backend
 # the exact file it installs (<binary>:<version>). Staging a new build changes
 # nothing here until its version is bumped. The log bridge's is one commit past
 # its v0.1.1 tag: what -latest pointed at when pinned.
-PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.16.0 deevnet-log-user:v0.16.0 deevnet-log-bridge:v0.1.1-1-g20abb75
+PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.18.0 deevnet-log-user:v0.18.0 deevnet-log-bridge:v0.1.1-1-g20abb75
 
 # Upstream releases, pinned to the versions Deevnet's log store runs
 # (deevnet.mgmt victorialogs role). The checksums are the release's own.
