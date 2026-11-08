@@ -14,6 +14,8 @@
 #   grafana              the tenant's dashboards on 3000, organization and data
 #                        sources written by `deevnet-kit dashboards` (CHG-0024)
 #   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
+#   deevnet-pki-owner.sh the starter kit for a PKI of the owner's own, which
+#                        `deevnet-kit pki` runs (ADR-0041 §3; deevnet.mgmt scripts/pki)
 #   podman               for the tenant's own app
 #
 # NOTHING SECRET IS BAKED IN. The CA, certificates, tokens and passwords are
@@ -23,7 +25,8 @@
 #
 # Usage (from Makefile):
 #   sudo ansible-playbook -i ansible/inventories/local.yml ansible/playbooks/pi-backend-config.yml \
-#     --extra-vars "chroot_root=/mnt/pi-bookworm-image pi_backend_inputs=/path/to/build/pi-backend"
+#     --extra-vars "chroot_root=/mnt/pi-bookworm-image pi_backend_inputs=/path/to/build/pi-backend \
+#                   pki_tools_src=/path/to/ansible-collection-deevnet.mgmt/scripts/pki pki_tools_ref=<commit>"
 
 - name: Configure Pi take-home backend image (offline)
   hosts: localhost
@@ -51,6 +54,9 @@
       - mosquitto-clients
       - podman
       - avahi-daemon
+      # The owner's root key stick (deevnet-pki-media.sh): LUKS2. The -bin
+      # package has no initramfs hooks; the root filesystem is not encrypted.
+      - cryptsetup-bin
 
     pi_backend_units:
       - deevnet-kit-ssh-hostkeys.service
@@ -77,6 +83,8 @@
           - chroot_root | length > 1
           - pi_backend_inputs is defined
           - pi_backend_inputs | length > 1
+          - pki_tools_src is defined
+          - pki_tools_ref is defined
         fail_msg: >
           chroot_root and pi_backend_inputs must be set
           (e.g. --extra-vars "chroot_root=/mnt/pi-bookworm-image pi_backend_inputs=$PWD/build/pi-backend")
@@ -211,6 +219,46 @@
         owner: root
         group: root
       loop: "{{ pi_backend_binaries }}"
+
+    # ------------------------------------------------------------
+    # The starter PKI (ADR-0041 §3, CHG-0056)
+    # ------------------------------------------------------------
+    # The owner's tools only: Deevnet's own ceremony (deevnet-pki-ceremony.sh,
+    # deevnet-pki-sign.sh, deevnet-pki.cnf) is the pi-pki image's, not this one's.
+    - name: Install the owner PKI tools
+      ansible.builtin.copy:
+        src: "{{ pki_tools_src }}/{{ item }}"
+        dest: "{{ chroot_root }}/usr/local/sbin/{{ item }}"
+        mode: "0755"
+        owner: root
+        group: root
+      loop:
+        - deevnet-pki-owner.sh
+        - deevnet-pki-media.sh
+
+    - name: Create the PKI profile directory
+      ansible.builtin.file:
+        path: "{{ chroot_root }}/usr/local/share/deevnet-pki"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: Install the owner PKI profile
+      ansible.builtin.copy:
+        src: "{{ pki_tools_src }}/deevnet-pki-owner.cnf"
+        dest: "{{ chroot_root }}/usr/local/share/deevnet-pki/deevnet-pki-owner.cnf"
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Record which tools the image carries
+      ansible.builtin.copy:
+        dest: "{{ chroot_root }}/usr/local/share/deevnet-pki/RELEASE"
+        content: "tools={{ pki_tools_ref }}\n"
+        mode: "0644"
+        owner: root
+        group: root
 
     # ------------------------------------------------------------
     # Grafana (CHG-0024)

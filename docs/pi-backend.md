@@ -17,6 +17,7 @@ Raspberry Pi of its own and keep the same **app contract**:
 | Device logs | `deevnet-log-bridge`, `+/log/#` → the tenant's `(index, 2)` | the same binary |
 | Dashboards, HTTPS, `:3000` | Grafana 13.2.2 with the VictoriaLogs plugin; organization, login and data sources by `deevnet-kit dashboards` | the same Grafana, written by the API (CHG-0024) |
 | Accounts, first boot, status | `deevnet-kit` | the Deevnet API |
+| A PKI of the owner's own | `deevnet-pki-owner.sh`, run by `deevnet-kit pki`; `cryptsetup` for the root key's stick | the Deevnet Root and the tenant CAs |
 | The tenant's app | Podman (4.3: no quadlets; an example unit is included) | a workload VM |
 | Name | `<hostname>.local` (avahi) | site DNS |
 
@@ -49,6 +50,7 @@ All arm64, all from the artifact server, fetched into `build/pi-backend/` by `ma
 | Binary | Staged by |
 |--------|-----------|
 | `deevnet-kit`, `deevnet-log-user` | `deevnet-provisioning-api`: `make stage-pi` |
+| `deevnet-pki-owner.sh`, `deevnet-pki-media.sh`, `deevnet-pki-owner.cnf` | the `ansible-collection-deevnet.mgmt` checkout beside this one (`scripts/pki`), recorded by commit in `/usr/local/share/deevnet-pki/RELEASE` |
 | `deevnet-log-bridge` | `deevnet-log-bridge`: `make stage-pi` |
 | `victoria-logs-prod`, `vmauth-prod` | this repo: `make pi-backend-stage-upstream` (once per version) |
 | `grafana.tar.gz` (Grafana's linux-arm64 release) | this repo: `make pi-backend-stage-upstream` |
@@ -126,7 +128,9 @@ owner's.
 | `/boot/firmware/deevnet-kit.txt` | tenant and index, read once |
 | `/etc/deevnet-kit/kit.json` | the tenant and its tokens (root, 0600). Its presence means first boot ran |
 | `/etc/deevnet-kit/accounts/` | one file per broker account (hash, never the password) |
-| `/etc/deevnet-kit/tls/` | the card's CA and the server certificate |
+| `/etc/deevnet-kit/tls/` | the CA the services trust and the server certificate |
+| `/etc/deevnet-kit/owner-ca/` | the owner's issuing CA and root certificate, after `deevnet-kit pki init`. The root's key is on the owner's stick, never here |
+| `/usr/local/sbin/deevnet-pki-owner.sh`, `/usr/local/share/deevnet-pki/` | the starter PKI's tools and profile |
 | `/etc/mosquitto/deevnet-kit/{passwd,acl}` | rendered by `deevnet-kit`; do not edit |
 | `/etc/deevnet-kit/log/` | `deevnet-log-user`'s inputs and vmauth's `auth.yml` |
 | `/etc/deevnet-kit/grafana.env` | Grafana's admin password and secret key (root, 0600) |
