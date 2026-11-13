@@ -43,13 +43,6 @@ variable "fedora_build" {
   default = "1.7"
 }
 
-# SHA256 of the DVD ISO. Only consulted when iso_download_pve = true; a local:iso
-# file is trusted as-is, matching the previous behaviour.
-variable "iso_sha256" {
-  type    = string
-  default = "85837793bfa36db6bc709b4cecd2ec116951b87d9c53c3d95eb2fac8dcf7cf1f"
-}
-
 # --- Build-time networking ---------------------------------------------------
 # The installer needs an address before it can fetch the kickstart, and the
 # installed system needs one for Packer's SSH provisioner. Using DHCP for that
@@ -93,15 +86,11 @@ variable "build_nameserver" {
 }
 
 # --- ISO sourcing ---
-# false (default): use an ISO already present in Proxmox storage at local:iso/.
-# true:            have Proxmox download it from the Deevnet artifact server,
-#                  which publishes it via the artifacts role. Removes the manual
-#                  hand-copy step, at the cost of requiring the artifact server
-#                  to be reachable from the Proxmox node.
-variable "iso_download_pve" {
-  type    = bool
-  default = false
-}
+# The DVD ISO is read from the node's local:iso. deevnet.builder's
+# proxmox_node_isos role stages it there from the artifact server, its SHA-256
+# checked, for every release built here (site.yml --tags isos, CHG-0037). The
+# API token cannot download to the node: Proxmox's download-url needs
+# Sys.AccessNetwork, which it does not hold.
 
 # The Deevnet Root CA (ADR-0031), from the inventory. Baked into the OS trust
 # store so a clone trusts it before Ansible reaches it. A public trust anchor,
@@ -110,11 +99,6 @@ variable "iso_download_pve" {
 variable "site_root_ca_file" {
   type    = string
   default = "../../../../ansible-inventory-deevnet/pki/deevnet-root-ca.pem"
-}
-
-variable "artifact_server_url" {
-  type    = string
-  default = "http://artifacts.mobile.deevnet.net"
 }
 
 variable "iso_storage_pool" {
@@ -173,7 +157,6 @@ locals {
   version_tag = "${var.fedora_release}-${var.fedora_build}"
   name_prefix = var.flavor == "tenant" ? "fedora-tenant" : "fedora-server"
   iso_name    = "Fedora-Server-dvd-x86_64-${local.version_tag}.iso"
-  iso_url     = "${var.artifact_server_url}/fedora/${var.fedora_release}/iso/${local.iso_name}"
 }
 
 source "proxmox-iso" "fedora-kickstart" {
@@ -217,17 +200,10 @@ source "proxmox-iso" "fedora-kickstart" {
     })
   }
 
-  # Boot ISO configuration
-  # When iso_download_pve is true Proxmox fetches the ISO from the artifact
-  # server and the checksum is enforced; otherwise the pre-staged local:iso
-  # file is used and trusted, as before.
+  # Boot ISO configuration: staged by proxmox_node_isos (see ISO sourcing).
   boot_iso {
     type             = "ide"
-    iso_file         = var.iso_download_pve ? null : "${var.iso_storage_pool}:iso/${local.iso_name}"
-    iso_url          = var.iso_download_pve ? local.iso_url : null
-    iso_checksum     = var.iso_download_pve ? "sha256:${var.iso_sha256}" : "none"
-    iso_storage_pool = var.iso_download_pve ? var.iso_storage_pool : null
-    iso_download_pve = var.iso_download_pve
+    iso_file         = "${var.iso_storage_pool}:iso/${local.iso_name}"
     unmount          = true
   }
 
