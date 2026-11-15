@@ -18,6 +18,8 @@
 #   vmalert@<tenant>     the tenant's alert rules, imported from its Terraform
 #   alertmanager         routes the tenant's alerts to its ntfy topics
 #   ntfy                 the phone's alerts, TLS on 443 (CHG-0072)
+#   silo                 the bucket store, TLS on 9000; disabled until the first
+#                        `deevnet-kit bucket add` (CHG-0073)
 #   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
 #   deevnet-pki-owner.sh the starter kit for a PKI of the owner's own, which
 #                        `deevnet-kit pki` runs (ADR-0041 §3; deevnet.mgmt scripts/pki)
@@ -59,6 +61,7 @@
       - vmselect-prod
       - alertmanager
       - ntfy
+      - silo
 
     pi_backend_packages:
       - mosquitto
@@ -228,11 +231,12 @@
         - vmalert
         - alertmanager
         - ntfy
+        - silo
       register: pi_backend_useradd_alerting
       changed_when: pi_backend_useradd_alerting.rc == 0
       failed_when: pi_backend_useradd_alerting.rc not in [0, 9]  # 9 = exists
 
-    - name: Let mosquitto, the log store, Grafana and ntfy read the TLS key
+    - name: Let mosquitto, the log store, Grafana, ntfy and silo read the TLS key
       ansible.builtin.command:
         cmd: "chroot {{ chroot_root }} usermod -aG deevnet-kit {{ item }}"
       loop:
@@ -240,6 +244,7 @@
         - victoria
         - grafana
         - ntfy
+        - silo
       changed_when: true
 
     # deevnet-log-user runs as victoria and writes alerting's files 0640;
@@ -404,6 +409,8 @@
         - {src: deevnet-alerting-sync.path, dest: /etc/systemd/system/deevnet-alerting-sync.path}
         - {src: deevnet-alerting-sync.service, dest: /etc/systemd/system/deevnet-alerting-sync.service}
         - {src: deevnet-kit-alerting.service, dest: /etc/systemd/system/deevnet-kit-alerting.service}
+        # Installed, not enabled: deevnet-kit enables it with the first bucket.
+        - {src: silo.service, dest: /etc/systemd/system/silo.service}
         - {src: README.txt, dest: /opt/deevnet-kit/README.txt}
         # Replaces Debian's licence notice: the first thing the owner sees on
         # login is where to start.

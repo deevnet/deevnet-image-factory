@@ -13,6 +13,8 @@ devices used on Deevnet at the meetup:
                                       terraform output -json alert_rules > rules.json
                                       sudo deevnet-kit alerts import rules.json
                                       sudo deevnet-kit notify
+  Buckets (TLS)         port 9000   S3 buckets, once you add one:
+                                      sudo deevnet-kit bucket add files --quota-gb 5
 
 Nothing on it belongs to Deevnet: no Deevnet account, key or route. The CA,
 certificates, tokens and passwords are made on this card the first time it
