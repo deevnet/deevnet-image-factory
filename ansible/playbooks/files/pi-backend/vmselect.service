@@ -1,0 +1,23 @@
+# deevnet-kit - the metrics store's read path, loopback only (CHG-0072).
+# No -deleteAuthKey: a Pi never purges a tenant.
+[Unit]
+Description=vmselect, the metrics store's read path (deevnet-kit)
+After=vmstorage.service
+Wants=vmstorage.service
+
+[Service]
+User=victoriametrics
+Group=victoriametrics
+CacheDirectory=vmselect
+ExecStart=/usr/local/bin/vmselect-prod \
+  -storageNode=127.0.0.1:8401 \
+  -httpListenAddr=127.0.0.1:8481 \
+  -cacheDataPath=/var/cache/vmselect \
+  -enableMultitenancyViaHeaders=false \
+  -memory.allowedBytes=96MiB
+MemoryMax=192M
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

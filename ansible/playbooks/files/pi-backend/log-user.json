@@ -1,8 +1,21 @@
 {
-  "_comment": "deevnet-kit - where deevnet-log-user reads the store's users and writes vmauth's configuration",
+  "_comment": "deevnet-kit - where deevnet-log-user reads the store's users and writes vmauth's configuration, and the tenant's alerting (CHG-0072)",
   "base": "/etc/deevnet-kit/log/base.json",
   "users_dir": "/etc/deevnet-kit/log/users.d",
   "auth_file": "/etc/deevnet-kit/log/auth/auth.yml",
   "reload_url": "http://127.0.0.1:8426/-/reload",
-  "timeout_seconds": 10
+  "timeout_seconds": 10,
+  "alerting": {
+    "alerts_dir": "/etc/deevnet-kit/log/alerts.d",
+    "vmalert_dir": "/var/lib/deevnet-kit/vmalert",
+    "vmalert_binary": "/usr/local/bin/vmalert-prod",
+    "vmalert_port_base": 20000,
+    "alertmanager_file": "/etc/deevnet-kit/alerting/alertmanager.yml",
+    "alertmanager_reload_url": "http://127.0.0.1:9093/-/reload",
+    "ntfy_url": "http://127.0.0.1:2586",
+    "ntfy_config_file": "/etc/deevnet-kit/alerting/ntfy-server.yml",
+    "publisher_password_file": "/etc/deevnet-kit/alerting/ntfy-publisher.pw",
+    "publisher_password_path": "/etc/deevnet-kit/alerting/ntfy-publisher.pw",
+    "changed_file": "/var/lib/deevnet-kit/vmalert/.changed"
+  }
 }

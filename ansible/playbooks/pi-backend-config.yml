@@ -13,6 +13,11 @@
 #   deevnet-log-bridge   <tenant>/log/<device> -> the tenant's device partition
 #   grafana              the tenant's dashboards on 3000, organization and data
 #                        sources written by `deevnet-kit dashboards` (CHG-0024)
+#   vmstorage, vminsert, the metrics store, loopback only, behind vmauth (CHG-0072)
+#   vmselect
+#   vmalert@<tenant>     the tenant's alert rules, imported from its Terraform
+#   alertmanager         routes the tenant's alerts to its ntfy topics
+#   ntfy                 the phone's alerts, TLS on 443 (CHG-0072)
 #   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
 #   deevnet-pki-owner.sh the starter kit for a PKI of the owner's own, which
 #                        `deevnet-kit pki` runs (ADR-0041 §3; deevnet.mgmt scripts/pki)
@@ -48,6 +53,12 @@
       - deevnet-log-bridge
       - victoria-logs-prod
       - vmauth-prod
+      - vmalert-prod
+      - vmstorage-prod
+      - vminsert-prod
+      - vmselect-prod
+      - alertmanager
+      - ntfy
 
     pi_backend_packages:
       - mosquitto
@@ -67,6 +78,13 @@
       - grafana.service
       - deevnet-kit-dashboards.service
       - deevnet-kit-selftest.service
+      - vmstorage.service
+      - vminsert.service
+      - vmselect.service
+      - alertmanager.service
+      - ntfy.service
+      - deevnet-alerting-sync.path
+      - deevnet-kit-alerting.service
 
     # Grafana and its VictoriaLogs plugin: the release tarball and the plugin
     # zip, checksum-verified by the Makefile before this play runs. The same
@@ -199,13 +217,46 @@
       changed_when: pi_backend_useradd_grafana.rc == 0
       failed_when: pi_backend_useradd_grafana.rc not in [0, 9]  # 9 = exists
 
-    - name: Let mosquitto, the log store and Grafana read the TLS key
+    # The metrics store, and alerting's three (CHG-0072). Each its own user.
+    - name: Create the metrics store's and alerting's users
+      ansible.builtin.command:
+        cmd: >-
+          chroot {{ chroot_root }} useradd --system --user-group --no-create-home
+          --home-dir /nonexistent --shell /usr/sbin/nologin {{ item }}
+      loop:
+        - victoriametrics
+        - vmalert
+        - alertmanager
+        - ntfy
+      register: pi_backend_useradd_alerting
+      changed_when: pi_backend_useradd_alerting.rc == 0
+      failed_when: pi_backend_useradd_alerting.rc not in [0, 9]  # 9 = exists
+
+    - name: Let mosquitto, the log store, Grafana and ntfy read the TLS key
       ansible.builtin.command:
         cmd: "chroot {{ chroot_root }} usermod -aG deevnet-kit {{ item }}"
       loop:
         - mosquitto
         - victoria
         - grafana
+        - ntfy
+      changed_when: true
+
+    # deevnet-log-user runs as victoria and writes alerting's files 0640;
+    # vmalert, Alertmanager and ntfy read them as members of its group, as
+    # vmalert does on Deevnet (CHG-0071).
+    - name: Let vmalert, Alertmanager and ntfy read the writer's files
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} usermod -aG victoria {{ item }}"
+      loop:
+        - vmalert
+        - alertmanager
+        - ntfy
+      changed_when: true
+
+    - name: Create the writer's vmalert directory
+      ansible.builtin.command:
+        cmd: "chroot {{ chroot_root }} install -d -o victoria -g victoria -m 0755 /var/lib/deevnet-kit /var/lib/deevnet-kit/vmalert"
       changed_when: true
 
     # ------------------------------------------------------------
@@ -344,10 +395,27 @@
         - {src: grafana.service, dest: /etc/systemd/system/grafana.service}
         - {src: deevnet-kit-dashboards.service, dest: /etc/systemd/system/deevnet-kit-dashboards.service}
         - {src: deevnet-kit-selftest.service, dest: /etc/systemd/system/deevnet-kit-selftest.service}
+        - {src: vmstorage.service, dest: /etc/systemd/system/vmstorage.service}
+        - {src: vminsert.service, dest: /etc/systemd/system/vminsert.service}
+        - {src: vmselect.service, dest: /etc/systemd/system/vmselect.service}
+        - {src: alertmanager.service, dest: /etc/systemd/system/alertmanager.service}
+        - {src: ntfy.service, dest: /etc/systemd/system/ntfy.service}
+        - {src: vmalert@.service, dest: /etc/systemd/system/vmalert@.service}
+        - {src: deevnet-alerting-sync.path, dest: /etc/systemd/system/deevnet-alerting-sync.path}
+        - {src: deevnet-alerting-sync.service, dest: /etc/systemd/system/deevnet-alerting-sync.service}
+        - {src: deevnet-kit-alerting.service, dest: /etc/systemd/system/deevnet-kit-alerting.service}
         - {src: README.txt, dest: /opt/deevnet-kit/README.txt}
         # Replaces Debian's licence notice: the first thing the owner sees on
         # login is where to start.
         - {src: motd, dest: /etc/motd}
+
+    - name: Install the alerting sync script
+      ansible.builtin.copy:
+        src: files/pi-backend/deevnet-alerting-sync
+        dest: "{{ chroot_root }}/usr/local/sbin/deevnet-alerting-sync"
+        mode: "0755"
+        owner: root
+        group: root
 
     # The boot partition is FAT, so the owner can set the tenant from any
     # laptop after flashing. The partition is mounted at /boot here and at

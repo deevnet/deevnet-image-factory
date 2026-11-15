@@ -16,6 +16,9 @@ Raspberry Pi of its own and keep the same **app contract**:
 | Log front door, TLS, `:8427` | vmauth, users rendered by `deevnet-log-user` | the same |
 | Device logs | `deevnet-log-bridge`, `+/log/#` → the tenant's `(index, 2)` | the same binary |
 | Dashboards, HTTPS, `:3000` | Grafana 13.2.2 with the VictoriaLogs plugin; organization, login and data sources by `deevnet-kit dashboards` | the same Grafana, written by the API (CHG-0024) |
+| Metrics, TLS, `:8427` | the VictoriaMetrics cluster (vmstorage, vminsert, vmselect `v1.156.0-cluster`), loopback only, behind the same vmauth; routes rendered by `deevnet-log-user` | the same store and routes (CHG-0070) |
+| Alert rules | `vmalert@<tenant>`, rules imported with `deevnet-kit alerts import` from the tenant's Terraform | `deevnet_alert_rule_group`, through the API (CHG-0071) |
+| Alerts to the phone, TLS, `:443` | Alertmanager `v0.35.0` and ntfy `v2.38.0`; the phone on the Pi's network | the same, on site |
 | Accounts, first boot, status | `deevnet-kit` | the Deevnet API |
 | A PKI of the owner's own | `deevnet-pki-owner.sh`, run by `deevnet-kit pki`; `cryptsetup` for the root key's stick | the Deevnet Root and the tenant CAs |
 | The tenant's app | Podman (4.3: no quadlets; an example unit is included) | a workload VM |
@@ -111,13 +114,17 @@ login message (`/etc/motd`) points there.
 ## Self-Test
 
 `sudo deevnet-kit selftest` proves the card end to end, as an app and a device use it:
-1. the six services;
-2. TLS on 8883, 8427 and 3000 against the card's CA;
+1. the services (one the owner disabled is reported off, not failed);
+2. TLS on 8883, 8427, 3000 and 443 against the card's CA;
 3. the bridge's subscription;
 4. a device log line published over MQTT through a throwaway account, read back from `<index>-2`;
 5. an app line sent with the ingest token, read back from `<index>-0`;
-6. as the tenant's Grafana login: Editor in one organization, the three data sources, the starter
-   dashboard, and the device line read back through Grafana.
+6. a metric pushed with the ingest token and found with the read token, and another tenant's
+   partition refused;
+7. as the tenant's Grafana login: Editor in one organization, the log and metrics data sources,
+   the starter dashboard, and the device line read back through Grafana;
+8. Alertmanager ready; the phone's ntfy login reads its own topics and publishes nowhere; and,
+   once rule groups are loaded, `vmalert@<tenant>` evaluating each with no error.
 
 `deevnet-kit-selftest.service` runs it after every boot; `deevnet-kit status` shows the last
 result, and a failure is also a failed unit. Each run leaves two log lines marked
@@ -140,6 +147,10 @@ owner's.
 | `/etc/mosquitto/deevnet-kit/{passwd,acl}` | rendered by `deevnet-kit`; do not edit |
 | `/etc/deevnet-kit/log/` | `deevnet-log-user`'s inputs and vmauth's `auth.yml` |
 | `/etc/deevnet-kit/grafana.env` | Grafana's admin password and secret key (root, 0600) |
+| `/etc/deevnet-kit/alerts.json` | the rule groups `deevnet-kit alerts import` loaded |
+| `/etc/deevnet-kit/alerting/` | Alertmanager's routes and ntfy's users (by `deevnet-log-user`), the publisher's password |
+| `/var/lib/deevnet-kit/vmalert/<tenant>/` | the tenant's vmalert: rules, read token, port; watched by `deevnet-alerting-sync.path` |
+| `/var/lib/vmstorage` | the metrics, 30 days |
 | `/opt/grafana`, `/var/lib/grafana-plugins` | Grafana and the plugin, root-owned and read-only to the service |
 | `/var/lib/grafana` | Grafana's database |
 | `/var/lib/deevnet-kit/selftest.json` | the last self-test's result |
@@ -148,9 +159,13 @@ owner's.
 
 ## Memory
 
-Grafana wants about 512 MB on top of the rest. A Pi 4 or 5 is the comfortable choice. On a
-512 MB Zero 2 W, turn the dashboards off and read logs by query:
-`sudo systemctl disable --now grafana deevnet-kit-dashboards`.
+Grafana wants about 512 MB on top of the rest. The metrics store and alerting add at most about
+370 MB, as measured under emulation on the Builder (CHG-0072, Step 2), which overstates a real
+Pi; each unit also has a `MemoryMax`. A Pi 4 or 5 with 2 GB or more is the comfortable
+choice. On a 1 GB Pi, the full set fits without much room for the app. On a 512 MB Zero 2 W, run
+MQTT and logs only:
+`sudo systemctl disable --now grafana deevnet-kit-dashboards vmstorage vminsert vmselect alertmanager ntfy deevnet-kit-alerting`.
+`status` and `selftest` then report those as off.
 
 ## Known Differences from Deevnet
 
@@ -160,6 +175,8 @@ Grafana wants about 512 MB on top of the rest. A Pi 4 or 5 is the comfortable ch
 - **One tenant.** The Pi's owner is also its operator, and holds Grafana's admin login
   (`grafana_admin_password` in `/etc/deevnet-kit/kit.json`).
 - **No device registry.** A device account names its device; the name is checked for shape only.
+- **Metrics are kept 30 days**, not Deevnet's 90: an SD card is not a data disk.
+- **Alerts reach the phone on the Pi's own network only.** Nothing goes to ntfy.sh.
 - **Revocation is immediate.** `deevnet-kit account rm` reloads Mosquitto, and 2.0.11 disconnects a
   connected client whose account is gone (tested against Debian's package). On Deevnet a revocation
   takes effect on the client's next connect.

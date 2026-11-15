@@ -1,0 +1,27 @@
+# deevnet-kit - the metrics store's storage, Deevnet's own (CHG-0070, CHG-0072).
+# LOOPBACK ONLY, as are vminsert and vmselect: they take a tenant from the path,
+# so nothing reaches them except through vmauth. 30 days, as the Pi's logs: an
+# SD card is not Deevnet's 90-day data disk.
+[Unit]
+Description=vmstorage, the metrics store's storage (deevnet-kit)
+After=network.target
+
+[Service]
+User=victoriametrics
+Group=victoriametrics
+StateDirectory=vmstorage
+ExecStart=/usr/local/bin/vmstorage-prod \
+  -storageDataPath=/var/lib/vmstorage \
+  -retentionPeriod=30d \
+  -storage.maxHourlySeries=20000 \
+  -storage.maxDailySeries=50000 \
+  -memory.allowedBytes=192MiB \
+  -httpListenAddr=127.0.0.1:8482 \
+  -vminsertAddr=127.0.0.1:8400 \
+  -vmselectAddr=127.0.0.1:8401
+MemoryMax=320M
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
