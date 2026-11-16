@@ -500,6 +500,10 @@ PI_BACKEND_NTFY_VERSION := 2.38.0
 PI_BACKEND_NTFY_TARBALL := ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64.tar.gz
 PI_BACKEND_NTFY_SHA256  := f596c52b0391a6da4ef5071d7eb367d6c7693e9e1b6b11fdb3c79b887cf125d3
 PI_BACKEND_ALERTING_PATH := pi-images/alerting
+# silo, the bucket store Deevnet's buckets run on, cross-built for arm64 from
+# the same tag by deevnet-container-image-factory (`make binary IMAGE=silo
+# ARCH=arm64`, CHG-0073), which stages it beside its sha256.
+PI_BACKEND_SILO_VERSION := RELEASE.2026-11-12T00-00-00Z
 # Grafana and its VictoriaLogs plugin, the versions Deevnet runs (deevnet.mgmt
 # grafana role, CHG-0024). Grafana's checksum is the one it publishes; the
 # plugin zip is the one the Builder already mirrors for Deevnet (deevnet.builder
@@ -594,7 +598,11 @@ pi-backend-inputs:
 	  alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-arm64/alertmanager
 	tar -xzf "$(PI_BACKEND_NTFY_TARBALL)" -C "$(PI_BACKEND_INPUTS)" --strip-components=1 \
 	  ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64/ntfy
-	for b in vmalert-prod vmstorage-prod vminsert-prod vmselect-prod alertmanager ntfy; do
+	curl -fsSL -O "$(ARTIFACT_URL)/binaries/silo/silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64"
+	curl -fsSL -O "$(ARTIFACT_URL)/binaries/silo/silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64.sha256"
+	sha256sum -c "silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64.sha256"
+	install -m 0755 "silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64" "$(PI_BACKEND_INPUTS)/silo"
+	for b in vmalert-prod vmstorage-prod vminsert-prod vmselect-prod alertmanager ntfy silo; do
 	  file "$(PI_BACKEND_INPUTS)/$$b" | grep -q 'ARM aarch64' || { echo "$(RED)✗ $$b is not an arm64 binary$(NC)"; exit 1; }
 	done
 	: "Grafana and its plugin stay packed; the config play unpacks them into the image"

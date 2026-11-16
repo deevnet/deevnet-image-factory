@@ -19,6 +19,7 @@ Raspberry Pi of its own and keep the same **app contract**:
 | Metrics, TLS, `:8427` | the VictoriaMetrics cluster (vmstorage, vminsert, vmselect `v1.156.0-cluster`), loopback only, behind the same vmauth; routes rendered by `deevnet-log-user` | the same store and routes (CHG-0070) |
 | Alert rules | `vmalert@<tenant>`, rules imported with `deevnet-kit alerts import` from the tenant's Terraform | `deevnet_alert_rule_group`, through the API (CHG-0071) |
 | Alerts to the phone, TLS, `:443` | Alertmanager `v0.35.0` and ntfy `v2.38.0`; the phone on the Pi's network | the same, on site |
+| Buckets, TLS, `:9000` | silo, cross-built for arm64 from the same tag; off until `deevnet-kit bucket add` | silo (CHG-0069) |
 | Accounts, first boot, status | `deevnet-kit` | the Deevnet API |
 | A PKI of the owner's own | `deevnet-pki-owner.sh`, run by `deevnet-kit pki`; `cryptsetup` for the root key's stick | the Deevnet Root and the tenant CAs |
 | The tenant's app | Podman (4.3: no quadlets; an example unit is included) | a workload VM |
@@ -151,6 +152,8 @@ owner's.
 | `/etc/deevnet-kit/alerting/` | Alertmanager's routes and ntfy's users (by `deevnet-log-user`), the publisher's password |
 | `/var/lib/deevnet-kit/vmalert/<tenant>/` | the tenant's vmalert: rules, read token, port; watched by `deevnet-alerting-sync.path` |
 | `/var/lib/vmstorage` | the metrics, 30 days |
+| `/etc/deevnet-kit/buckets/` | each bucket's settings and keys (root, 0600) |
+| `/etc/deevnet-kit/silo.env`, `/var/lib/silo` | silo's root login, made with the first bucket, and the objects |
 | `/opt/grafana`, `/var/lib/grafana-plugins` | Grafana and the plugin, root-owned and read-only to the service |
 | `/var/lib/grafana` | Grafana's database |
 | `/var/lib/deevnet-kit/selftest.json` | the last self-test's result |
