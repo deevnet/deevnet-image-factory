@@ -1,0 +1,21 @@
+# deevnet-kit - the metrics store's write path, loopback only (CHG-0072).
+# Header tenancy off: the partition is the path vmauth wrote, never a header.
+[Unit]
+Description=vminsert, the metrics store's write path (deevnet-kit)
+After=vmstorage.service
+Wants=vmstorage.service
+
+[Service]
+User=victoriametrics
+Group=victoriametrics
+ExecStart=/usr/local/bin/vminsert-prod \
+  -storageNode=127.0.0.1:8400 \
+  -httpListenAddr=127.0.0.1:8480 \
+  -enableMultitenancyViaHeaders=false \
+  -memory.allowedBytes=48MiB
+MemoryMax=128M
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

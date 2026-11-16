@@ -1,0 +1,17 @@
+# deevnet-kit - the tenant's alerting, written again from the card's state
+# each boot, once Alertmanager and ntfy are up: the rule groups loaded with
+# `deevnet-kit alerts import`, and on a first boot the phone's ntfy login.
+[Unit]
+Description=deevnet-kit alerting (the tenant's rules and the phone's login)
+ConditionPathExists=/etc/deevnet-kit/kit.json
+Wants=alertmanager.service ntfy.service vmauth.service
+After=alertmanager.service ntfy.service vmauth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/deevnet-kit alerts sync
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

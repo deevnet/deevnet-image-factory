@@ -1,0 +1,34 @@
+# deevnet-kit - ntfy, where the phone reads the tenant's alerts (CHG-0072).
+# TLS on 443 with the card's certificate, as Deevnet's notify_endpoint is on
+# 443; plain HTTP on loopback for Alertmanager. Its users are declared by
+# deevnet-log-user and read when it starts, so deevnet-alerting-sync restarts
+# it when they change. Nothing goes to ntfy.sh.
+[Unit]
+Description=ntfy, the tenant's alerts for its phone (deevnet-kit)
+ConditionPathExists=/etc/deevnet-kit/ntfy.env
+After=deevnet-kit-firstboot.service
+
+[Service]
+User=ntfy
+Group=ntfy
+SupplementaryGroups=victoria deevnet-kit
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+StateDirectory=ntfy
+# NTFY_BASE_URL, which follows the names the Pi answers to.
+EnvironmentFile=/etc/deevnet-kit/ntfy.env
+Environment=NTFY_LISTEN_HTTPS=:443
+Environment=NTFY_CERT_FILE=/etc/deevnet-kit/tls/server.pem
+Environment=NTFY_KEY_FILE=/etc/deevnet-kit/tls/server-key.pem
+Environment=NTFY_LISTEN_HTTP=127.0.0.1:2586
+Environment=NTFY_AUTH_FILE=/var/lib/ntfy/user.db
+Environment=NTFY_AUTH_DEFAULT_ACCESS=deny-all
+Environment=NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
+Environment=NTFY_CACHE_DURATION=12h
+Environment=NTFY_ENABLE_SIGNUP=false
+ExecStart=/usr/local/bin/ntfy serve --config /etc/deevnet-kit/alerting/ntfy-server.yml
+MemoryMax=96M
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -476,17 +476,30 @@ PI_BACKEND_INPUTS := $(CURDIR)/build/pi-backend
 # the exact file it installs (<binary>:<version>). Staging a new build changes
 # nothing here until its version is bumped. The log bridge's is one commit past
 # its v0.1.1 tag: what -latest pointed at when pinned.
-PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.18.0 deevnet-log-user:v0.18.0 deevnet-log-bridge:v0.1.1-1-g20abb75
+PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.26.0 deevnet-log-user:v0.26.0 deevnet-log-bridge:v0.1.1-1-g20abb75
 
 # Upstream releases, pinned to the versions Deevnet's log store runs
 # (deevnet.mgmt victorialogs role). The checksums are the release's own.
 PI_BACKEND_VLOGS_VERSION := v1.52.0
 PI_BACKEND_VLOGS_TARBALL := victoria-logs-linux-arm64-$(PI_BACKEND_VLOGS_VERSION).tar.gz
 PI_BACKEND_VLOGS_SHA256  := 91338c3e5e3d743a862c0a8665bf80862f639dbd4de6f6ff19ada7df5e9acf45
-PI_BACKEND_VMUTILS_VERSION := v1.152.0
+# vmauth and vmalert from vmutils, and the metrics store's cluster, at the
+# release Deevnet's metrics store and vmalert run (deevnet.mgmt metrics_store
+# and alerting roles, CHG-0070, CHG-0071).
+PI_BACKEND_VMUTILS_VERSION := v1.156.0
 PI_BACKEND_VMUTILS_TARBALL := vmutils-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION).tar.gz
-PI_BACKEND_VMUTILS_SHA256  := 57c567b262962a4cb8e35c0c34efe64629a3e1ea69ac0611d8d67e168df8b1e8
+PI_BACKEND_VMUTILS_SHA256  := 1a8e4ed55df2a59d5cd03056213f50d293d4fab029e38dd960597362d92cf176
+PI_BACKEND_VMCLUSTER_TARBALL := victoria-metrics-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION)-cluster.tar.gz
+PI_BACKEND_VMCLUSTER_SHA256  := 74505196bf58779c0b9eca0b6b469a9bdd5a8802b9dfc1ed1e40b71004992643
 PI_BACKEND_UPSTREAM_PATH := pi-images/victoria
+# Alerting's other two, the versions Deevnet's alerting role runs (CHG-0071).
+PI_BACKEND_ALERTMANAGER_VERSION := 0.35.0
+PI_BACKEND_ALERTMANAGER_TARBALL := alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-arm64.tar.gz
+PI_BACKEND_ALERTMANAGER_SHA256  := b7a8a69f849c6f837348b05476195862152f9de8eae338eb36ab29801d341654
+PI_BACKEND_NTFY_VERSION := 2.38.0
+PI_BACKEND_NTFY_TARBALL := ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64.tar.gz
+PI_BACKEND_NTFY_SHA256  := f596c52b0391a6da4ef5071d7eb367d6c7693e9e1b6b11fdb3c79b887cf125d3
+PI_BACKEND_ALERTING_PATH := pi-images/alerting
 # Grafana and its VictoriaLogs plugin, the versions Deevnet runs (deevnet.mgmt
 # grafana role, CHG-0024). Grafana's checksum is the one it publishes; the
 # plugin zip is the one the Builder already mirrors for Deevnet (deevnet.builder
@@ -515,16 +528,27 @@ pi-backend-stage-upstream:
 	  "https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/$(PI_BACKEND_VLOGS_VERSION)/$(PI_BACKEND_VLOGS_TARBALL)"
 	curl -fsSL -o "$$TMP/$(PI_BACKEND_VMUTILS_TARBALL)" \
 	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMUTILS_TARBALL)"
+	curl -fsSL -o "$$TMP/$(PI_BACKEND_VMCLUSTER_TARBALL)" \
+	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMCLUSTER_TARBALL)"
+	curl -fsSL -o "$$TMP/$(PI_BACKEND_ALERTMANAGER_TARBALL)" \
+	  "https://github.com/prometheus/alertmanager/releases/download/v$(PI_BACKEND_ALERTMANAGER_VERSION)/$(PI_BACKEND_ALERTMANAGER_TARBALL)"
+	curl -fsSL -o "$$TMP/$(PI_BACKEND_NTFY_TARBALL)" \
+	  "https://github.com/binwiederhier/ntfy/releases/download/v$(PI_BACKEND_NTFY_VERSION)/$(PI_BACKEND_NTFY_TARBALL)"
 	curl -fsSL -o "$$TMP/$(PI_BACKEND_GRAFANA_TARBALL)" "$(PI_BACKEND_GRAFANA_URL)"
 	cd "$$TMP"
-	printf '%s  %s\n%s  %s\n%s  %s\n' \
+	printf '%s  %s\n' \
 	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
 	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
+	  "$(PI_BACKEND_VMCLUSTER_SHA256)" "$(PI_BACKEND_VMCLUSTER_TARBALL)" \
+	  "$(PI_BACKEND_ALERTMANAGER_SHA256)" "$(PI_BACKEND_ALERTMANAGER_TARBALL)" \
+	  "$(PI_BACKEND_NTFY_SHA256)" "$(PI_BACKEND_NTFY_TARBALL)" \
 	  "$(PI_BACKEND_GRAFANA_SHA256)" "$(PI_BACKEND_GRAFANA_TARBALL)" | sha256sum -c -
 	sudo install -d -o nginx -g nginx -m 0755 "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)" \
-	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)"
+	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)" "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_ALERTING_PATH)"
 	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_VLOGS_TARBALL)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
-	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)/"
+	  "$(PI_BACKEND_VMCLUSTER_TARBALL)" "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)/"
+	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_ALERTMANAGER_TARBALL)" "$(PI_BACKEND_NTFY_TARBALL)" \
+	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_ALERTING_PATH)/"
 	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_GRAFANA_TARBALL)" \
 	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)/"
 	echo "$(GREEN)✓ Staged under $(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH) and $(PI_BACKEND_GRAFANA_PATH)$(NC)"
@@ -554,11 +578,25 @@ pi-backend-inputs:
 	cd "$(PI_BACKEND_INPUTS)/tmp"
 	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VLOGS_TARBALL)"
 	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMUTILS_TARBALL)"
-	printf '%s  %s\n%s  %s\n' \
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMCLUSTER_TARBALL)"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_ALERTING_PATH)/$(PI_BACKEND_ALERTMANAGER_TARBALL)"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_ALERTING_PATH)/$(PI_BACKEND_NTFY_TARBALL)"
+	printf '%s  %s\n' \
 	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
-	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" | sha256sum -c -
+	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
+	  "$(PI_BACKEND_VMCLUSTER_SHA256)" "$(PI_BACKEND_VMCLUSTER_TARBALL)" \
+	  "$(PI_BACKEND_ALERTMANAGER_SHA256)" "$(PI_BACKEND_ALERTMANAGER_TARBALL)" \
+	  "$(PI_BACKEND_NTFY_SHA256)" "$(PI_BACKEND_NTFY_TARBALL)" | sha256sum -c -
 	tar -xzf "$(PI_BACKEND_VLOGS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" victoria-logs-prod
-	tar -xzf "$(PI_BACKEND_VMUTILS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmauth-prod
+	tar -xzf "$(PI_BACKEND_VMUTILS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmauth-prod vmalert-prod
+	tar -xzf "$(PI_BACKEND_VMCLUSTER_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmstorage-prod vminsert-prod vmselect-prod
+	tar -xzf "$(PI_BACKEND_ALERTMANAGER_TARBALL)" -C "$(PI_BACKEND_INPUTS)" --strip-components=1 \
+	  alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-arm64/alertmanager
+	tar -xzf "$(PI_BACKEND_NTFY_TARBALL)" -C "$(PI_BACKEND_INPUTS)" --strip-components=1 \
+	  ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64/ntfy
+	for b in vmalert-prod vmstorage-prod vminsert-prod vmselect-prod alertmanager ntfy; do
+	  file "$(PI_BACKEND_INPUTS)/$$b" | grep -q 'ARM aarch64' || { echo "$(RED)✗ $$b is not an arm64 binary$(NC)"; exit 1; }
+	done
 	: "Grafana and its plugin stay packed; the config play unpacks them into the image"
 	curl -fsSL -o "$(PI_BACKEND_INPUTS)/grafana.tar.gz" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PATH)/$(PI_BACKEND_GRAFANA_TARBALL)"
 	curl -fsSL -o "$(PI_BACKEND_INPUTS)/grafana-plugin.zip" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PLUGIN)"

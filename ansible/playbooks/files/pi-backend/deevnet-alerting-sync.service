@@ -1,0 +1,8 @@
+# deevnet-kit - start, reload and stop the tenant's vmalert, and restart ntfy,
+# from the writer's files (CHG-0072).
+[Unit]
+Description=Start, reload and stop vmalert, and restart ntfy, from the writer's files (deevnet-kit)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/deevnet-alerting-sync

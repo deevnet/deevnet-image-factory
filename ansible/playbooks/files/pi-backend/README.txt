@@ -8,6 +8,11 @@ devices used on Deevnet at the meetup:
   Log store (TLS)       port 8427   VictoriaLogs behind vmauth, same tokens
   Device-log bridge                 <tenant>/log/<device> -> your device logs
   Dashboards (HTTPS)    port 3000   Grafana, your own organization
+  Metrics (TLS)         port 8427   the same tokens as logs, METRICS_ENDPOINT
+  Alerts (HTTPS)        port 443    ntfy for your phone; rules from your Terraform:
+                                      terraform output -json alert_rules > rules.json
+                                      sudo deevnet-kit alerts import rules.json
+                                      sudo deevnet-kit notify
 
 Nothing on it belongs to Deevnet: no Deevnet account, key or route. The CA,
 certificates, tokens and passwords are made on this card the first time it
