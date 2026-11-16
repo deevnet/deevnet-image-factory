@@ -6,12 +6,20 @@ Description=deevnet-kit alerting (the tenant's rules and the phone's login)
 ConditionPathExists=/etc/deevnet-kit/kit.json
 Wants=alertmanager.service ntfy.service vmauth.service
 After=alertmanager.service ntfy.service vmauth.service
+# Up to two minutes of retries: vmauth counts as started when its process
+# does, before it listens, and the writer's render ends by asking it to
+# reload. On a first boot that came a moment too soon ("connection refused",
+# CHG-0072 verification on a real Pi).
+StartLimitIntervalSec=120
+StartLimitBurst=10
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/deevnet-kit alerts sync
 TimeoutStartSec=300
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
