@@ -1,0 +1,13 @@
+# deevnet-kit - the root file system fills its disk, on every boot (CHG-0074).
+# The image's disk is 16G; a hypervisor may give it more, now or later.
+[Unit]
+Description=deevnet-kit grow the root file system to its disk
+After=local-fs.target
+Before=deevnet-kit-firstboot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/deevnet-kit-growroot
+
+[Install]
+WantedBy=multi-user.target

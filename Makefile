@@ -160,6 +160,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: help init validate check clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
+.PHONY: vm-backend vm-backend-stage-upstream vm-backend-inputs vm-backend-base vm-backend-config vm-backend-compress vm-backend-publish
 .PHONY: pi-pki pi-pki-image pi-pki-config pi-pki-compress pi-pki-publish
 .PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-backend-publish pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
@@ -188,6 +189,9 @@ help:
 	@echo "  pi-backend             Build the take-home tenant backend image (MQTT + logs, no Deevnet access)"
 	@echo "  pi-backend-stage-upstream  Stage the arm64 VictoriaLogs/vmauth releases on the artifact server (sudo)"
 	@echo "  pi-backend-publish     Publish the built .img.xz to the tenant downloads tree (sudo)"
+	@echo "  vm-backend             Build the take-home tenant backend as an amd64 VM image (qcow2, Proxmox/KVM)"
+	@echo "  vm-backend-stage-upstream  Stage the amd64 releases and Debian's base image, throttled (sudo)"
+	@echo "  vm-backend-publish     Publish the built .qcow2 to the tenant downloads tree (sudo)"
 	@echo "  pi-pki                 Build the offline CA ceremony image for a Raspberry Pi 4 (no network, tools baked in)"
 	@echo "  pi-pki-publish         Publish the ceremony image and its sha256 to the artifact server (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
@@ -481,28 +485,41 @@ PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.26.0 deevnet-log-user:v0.26.0 deev
 # Upstream releases, pinned to the versions Deevnet's log store runs
 # (deevnet.mgmt victorialogs role). The checksums are the release's own.
 PI_BACKEND_VLOGS_VERSION := v1.52.0
-PI_BACKEND_VLOGS_TARBALL := victoria-logs-linux-arm64-$(PI_BACKEND_VLOGS_VERSION).tar.gz
-PI_BACKEND_VLOGS_SHA256  := 91338c3e5e3d743a862c0a8665bf80862f639dbd4de6f6ff19ada7df5e9acf45
+# Each upstream release in two builds: arm64 for the Pi, amd64 for the take-home
+# VM (CHG-0074). A name ends in the architecture; so does its checksum's.
+PI_BACKEND_VLOGS_TARBALL_arm64 := victoria-logs-linux-arm64-$(PI_BACKEND_VLOGS_VERSION).tar.gz
+PI_BACKEND_VLOGS_SHA256_arm64  := 91338c3e5e3d743a862c0a8665bf80862f639dbd4de6f6ff19ada7df5e9acf45
+PI_BACKEND_VLOGS_TARBALL_amd64 := victoria-logs-linux-amd64-$(PI_BACKEND_VLOGS_VERSION).tar.gz
+PI_BACKEND_VLOGS_SHA256_amd64  := d14f585144b8d6813f15e11f0041f487e15e10e5f5e5a31be0311367e93d3494
 # vmauth and vmalert from vmutils, and the metrics store's cluster, at the
 # release Deevnet's metrics store and vmalert run (deevnet.mgmt metrics_store
 # and alerting roles, CHG-0070, CHG-0071).
 PI_BACKEND_VMUTILS_VERSION := v1.156.0
-PI_BACKEND_VMUTILS_TARBALL := vmutils-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION).tar.gz
-PI_BACKEND_VMUTILS_SHA256  := 1a8e4ed55df2a59d5cd03056213f50d293d4fab029e38dd960597362d92cf176
-PI_BACKEND_VMCLUSTER_TARBALL := victoria-metrics-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION)-cluster.tar.gz
-PI_BACKEND_VMCLUSTER_SHA256  := 74505196bf58779c0b9eca0b6b469a9bdd5a8802b9dfc1ed1e40b71004992643
+PI_BACKEND_VMUTILS_TARBALL_arm64 := vmutils-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION).tar.gz
+PI_BACKEND_VMUTILS_SHA256_arm64  := 1a8e4ed55df2a59d5cd03056213f50d293d4fab029e38dd960597362d92cf176
+PI_BACKEND_VMUTILS_TARBALL_amd64 := vmutils-linux-amd64-$(PI_BACKEND_VMUTILS_VERSION).tar.gz
+PI_BACKEND_VMUTILS_SHA256_amd64  := d71f7f00e07782531000620ec6c2a9d7ec83324f364dd1f36095ab378b5fb43b
+PI_BACKEND_VMCLUSTER_TARBALL_arm64 := victoria-metrics-linux-arm64-$(PI_BACKEND_VMUTILS_VERSION)-cluster.tar.gz
+PI_BACKEND_VMCLUSTER_SHA256_arm64  := 74505196bf58779c0b9eca0b6b469a9bdd5a8802b9dfc1ed1e40b71004992643
+PI_BACKEND_VMCLUSTER_TARBALL_amd64 := victoria-metrics-linux-amd64-$(PI_BACKEND_VMUTILS_VERSION)-cluster.tar.gz
+PI_BACKEND_VMCLUSTER_SHA256_amd64  := e026eb6da6221c9058ad5ebeb8dda97106b2086b628d84c5c2b3d3ed8a7939d4
 PI_BACKEND_UPSTREAM_PATH := pi-images/victoria
 # Alerting's other two, the versions Deevnet's alerting role runs (CHG-0071).
 PI_BACKEND_ALERTMANAGER_VERSION := 0.35.0
-PI_BACKEND_ALERTMANAGER_TARBALL := alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-arm64.tar.gz
-PI_BACKEND_ALERTMANAGER_SHA256  := b7a8a69f849c6f837348b05476195862152f9de8eae338eb36ab29801d341654
+PI_BACKEND_ALERTMANAGER_TARBALL_arm64 := alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-arm64.tar.gz
+PI_BACKEND_ALERTMANAGER_SHA256_arm64  := b7a8a69f849c6f837348b05476195862152f9de8eae338eb36ab29801d341654
+PI_BACKEND_ALERTMANAGER_TARBALL_amd64 := alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-amd64.tar.gz
+PI_BACKEND_ALERTMANAGER_SHA256_amd64  := 6c7752a903c40c8a749e0b29df9240437e4fbb8228068d0af8807377db32addd
 PI_BACKEND_NTFY_VERSION := 2.38.0
-PI_BACKEND_NTFY_TARBALL := ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64.tar.gz
-PI_BACKEND_NTFY_SHA256  := f596c52b0391a6da4ef5071d7eb367d6c7693e9e1b6b11fdb3c79b887cf125d3
+PI_BACKEND_NTFY_TARBALL_arm64 := ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64.tar.gz
+PI_BACKEND_NTFY_SHA256_arm64  := f596c52b0391a6da4ef5071d7eb367d6c7693e9e1b6b11fdb3c79b887cf125d3
+PI_BACKEND_NTFY_TARBALL_amd64 := ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_amd64.tar.gz
+PI_BACKEND_NTFY_SHA256_amd64  := b1ff7cae482a6b802c28cddd83b63c7e146bf96a5ff97894278ab478b3a0436c
 PI_BACKEND_ALERTING_PATH := pi-images/alerting
-# silo, the bucket store Deevnet's buckets run on, cross-built for arm64 from
-# the same tag by deevnet-container-image-factory (`make binary IMAGE=silo
-# ARCH=arm64`, CHG-0073), which stages it beside its sha256.
+# silo, the bucket store Deevnet's buckets run on. arm64 is cross-built from the
+# same tag by deevnet-container-image-factory (`make binary IMAGE=silo
+# ARCH=arm64`, CHG-0073); amd64 is the static binary in the amd64 image Deevnet
+# runs, built by the same stage (CHG-0074). Each is staged beside its sha256.
 PI_BACKEND_SILO_VERSION := RELEASE.2026-11-12T00-00-00Z
 # Grafana and its VictoriaLogs plugin, the versions Deevnet runs (deevnet.mgmt
 # grafana role, CHG-0024). Grafana's checksum is the one it publishes; the
@@ -510,52 +527,61 @@ PI_BACKEND_SILO_VERSION := RELEASE.2026-11-12T00-00-00Z
 # artifacts, fetched-artifacts), whose sha256 inventory pins. One zip carries
 # every platform's backend.
 PI_BACKEND_GRAFANA_VERSION := 13.2.2
-PI_BACKEND_GRAFANA_TARBALL := grafana_13.2.2_34846740809_linux_arm64.tar.gz
-PI_BACKEND_GRAFANA_SHA256  := 7268f9a576f919f14e6263b344a85b6ac8d768fbda247910c43ce4e12c747a72
-PI_BACKEND_GRAFANA_URL     := https://dl.grafana.com/grafana/release/$(PI_BACKEND_GRAFANA_VERSION)/$(PI_BACKEND_GRAFANA_TARBALL)
+PI_BACKEND_GRAFANA_TARBALL_arm64 := grafana_13.2.2_34846740809_linux_arm64.tar.gz
+PI_BACKEND_GRAFANA_SHA256_arm64  := 7268f9a576f919f14e6263b344a85b6ac8d768fbda247910c43ce4e12c747a72
+PI_BACKEND_GRAFANA_TARBALL_amd64 := grafana_13.2.2_34846740809_linux_amd64.tar.gz
+PI_BACKEND_GRAFANA_SHA256_amd64  := 9662c838a09824fdb072e5f6fbdd45b62cf541b20f3d609ea5011e6e5f544c8f
+PI_BACKEND_GRAFANA_RELEASE_URL := https://dl.grafana.com/grafana/release/$(PI_BACKEND_GRAFANA_VERSION)
 PI_BACKEND_GRAFANA_PATH    := pi-images/grafana
 PI_BACKEND_GRAFANA_PLUGIN  := grafana-plugins/victoriametrics-logs-datasource-v0.32.0.zip
 PI_BACKEND_GRAFANA_PLUGIN_SHA256 := 8204d097b17f53b1c3a71761047734b7980bd983710c6cfcef8d938abe5eeef0
+# What `file` says of a binary built for each.
+PI_BACKEND_MAGIC_arm64 := ARM aarch64
+PI_BACKEND_MAGIC_amd64 := x86-64
+# Downloads across the core router are throttled (INC-0005).
+UPSTREAM_RATE ?= 1500K
 PI_BACKEND_ARTIFACTS_ROOT ?= /srv/deevnet-http
 
 # Full backend image = inputs + base image + resize + offline config + compress
 pi-backend: pi-backend-inputs pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 	echo "$(GREEN)✓ Pi backend image complete: $(PI_BACKEND_AUTOPROV_IMG).xz$(NC)"
 
-# One-time, on the Builder: put the upstream arm64 releases where the build
-# fetches them. Pis are outside the artifact role's mirroring, so this is the
-# stage step for them, and it refuses a download whose checksum is wrong.
-pi-backend-stage-upstream:
-	TMP="$$(mktemp -d)"
+# One-time, on the Builder: put the upstream releases for one architecture
+# ($(1)) where the build fetches them. Pis and the take-home VM are outside the
+# artifact role's mirroring, so this is their stage step. Each download is
+# throttled, a file already staged with the right checksum is not fetched
+# again, and a download whose checksum is wrong is refused.
+define backend_stage_upstream
+	A="$(PI_BACKEND_ARTIFACTS_ROOT)"
+	sudo install -d -o nginx -g nginx -m 0755 "$$A/$(PI_BACKEND_UPSTREAM_PATH)" "$$A/$(PI_BACKEND_GRAFANA_PATH)" "$$A/$(PI_BACKEND_ALERTING_PATH)"
+	TMP="$$(mktemp -d -p /srv)"
 	trap 'rm -rf "$$TMP"' EXIT
-	curl -fsSL -o "$$TMP/$(PI_BACKEND_VLOGS_TARBALL)" \
-	  "https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/$(PI_BACKEND_VLOGS_VERSION)/$(PI_BACKEND_VLOGS_TARBALL)"
-	curl -fsSL -o "$$TMP/$(PI_BACKEND_VMUTILS_TARBALL)" \
-	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMUTILS_TARBALL)"
-	curl -fsSL -o "$$TMP/$(PI_BACKEND_VMCLUSTER_TARBALL)" \
-	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMCLUSTER_TARBALL)"
-	curl -fsSL -o "$$TMP/$(PI_BACKEND_ALERTMANAGER_TARBALL)" \
-	  "https://github.com/prometheus/alertmanager/releases/download/v$(PI_BACKEND_ALERTMANAGER_VERSION)/$(PI_BACKEND_ALERTMANAGER_TARBALL)"
-	curl -fsSL -o "$$TMP/$(PI_BACKEND_NTFY_TARBALL)" \
-	  "https://github.com/binwiederhier/ntfy/releases/download/v$(PI_BACKEND_NTFY_VERSION)/$(PI_BACKEND_NTFY_TARBALL)"
-	curl -fsSL -o "$$TMP/$(PI_BACKEND_GRAFANA_TARBALL)" "$(PI_BACKEND_GRAFANA_URL)"
-	cd "$$TMP"
-	printf '%s  %s\n' \
-	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
-	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
-	  "$(PI_BACKEND_VMCLUSTER_SHA256)" "$(PI_BACKEND_VMCLUSTER_TARBALL)" \
-	  "$(PI_BACKEND_ALERTMANAGER_SHA256)" "$(PI_BACKEND_ALERTMANAGER_TARBALL)" \
-	  "$(PI_BACKEND_NTFY_SHA256)" "$(PI_BACKEND_NTFY_TARBALL)" \
-	  "$(PI_BACKEND_GRAFANA_SHA256)" "$(PI_BACKEND_GRAFANA_TARBALL)" | sha256sum -c -
-	sudo install -d -o nginx -g nginx -m 0755 "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)" \
-	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)" "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_ALERTING_PATH)"
-	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_VLOGS_TARBALL)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
-	  "$(PI_BACKEND_VMCLUSTER_TARBALL)" "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH)/"
-	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_ALERTMANAGER_TARBALL)" "$(PI_BACKEND_NTFY_TARBALL)" \
-	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_ALERTING_PATH)/"
-	sudo install -o nginx -g nginx -m 0644 "$(PI_BACKEND_GRAFANA_TARBALL)" \
-	  "$(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_GRAFANA_PATH)/"
-	echo "$(GREEN)✓ Staged under $(PI_BACKEND_ARTIFACTS_ROOT)/$(PI_BACKEND_UPSTREAM_PATH) and $(PI_BACKEND_GRAFANA_PATH)$(NC)"
+	stage() { # dir file sha256 url
+	  if [[ -f "$$A/$$1/$$2" ]] && echo "$$3  $$A/$$1/$$2" | sha256sum -c --quiet - 2>/dev/null; then
+	    echo "have $$1/$$2"; return 0
+	  fi
+	  curl -fsSL --limit-rate "$(UPSTREAM_RATE)" -o "$$TMP/$$2" "$$4"
+	  echo "$$3  $$TMP/$$2" | sha256sum -c -
+	  sudo install -o nginx -g nginx -m 0644 "$$TMP/$$2" "$$A/$$1/$$2"
+	  rm -f "$$TMP/$$2"
+	}
+	stage "$(PI_BACKEND_UPSTREAM_PATH)" "$(PI_BACKEND_VLOGS_TARBALL_$(1))" "$(PI_BACKEND_VLOGS_SHA256_$(1))" \
+	  "https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/$(PI_BACKEND_VLOGS_VERSION)/$(PI_BACKEND_VLOGS_TARBALL_$(1))"
+	stage "$(PI_BACKEND_UPSTREAM_PATH)" "$(PI_BACKEND_VMUTILS_TARBALL_$(1))" "$(PI_BACKEND_VMUTILS_SHA256_$(1))" \
+	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMUTILS_TARBALL_$(1))"
+	stage "$(PI_BACKEND_UPSTREAM_PATH)" "$(PI_BACKEND_VMCLUSTER_TARBALL_$(1))" "$(PI_BACKEND_VMCLUSTER_SHA256_$(1))" \
+	  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/$(PI_BACKEND_VMUTILS_VERSION)/$(PI_BACKEND_VMCLUSTER_TARBALL_$(1))"
+	stage "$(PI_BACKEND_ALERTING_PATH)" "$(PI_BACKEND_ALERTMANAGER_TARBALL_$(1))" "$(PI_BACKEND_ALERTMANAGER_SHA256_$(1))" \
+	  "https://github.com/prometheus/alertmanager/releases/download/v$(PI_BACKEND_ALERTMANAGER_VERSION)/$(PI_BACKEND_ALERTMANAGER_TARBALL_$(1))"
+	stage "$(PI_BACKEND_ALERTING_PATH)" "$(PI_BACKEND_NTFY_TARBALL_$(1))" "$(PI_BACKEND_NTFY_SHA256_$(1))" \
+	  "https://github.com/binwiederhier/ntfy/releases/download/v$(PI_BACKEND_NTFY_VERSION)/$(PI_BACKEND_NTFY_TARBALL_$(1))"
+	stage "$(PI_BACKEND_GRAFANA_PATH)" "$(PI_BACKEND_GRAFANA_TARBALL_$(1))" "$(PI_BACKEND_GRAFANA_SHA256_$(1))" \
+	  "$(PI_BACKEND_GRAFANA_RELEASE_URL)/$(PI_BACKEND_GRAFANA_TARBALL_$(1))"
+	echo "$(GREEN)✓ $(1) releases staged under $$A/pi-images$(NC)"
+endef
+
+pi-backend-stage-upstream:
+	$(call backend_stage_upstream,arm64)
 
 # Publish the finished image to the tenant downloads tree (CHG-0025), which the
 # observability store serves to DVNTM-TD, so a meetup flashes cards from the
@@ -569,50 +595,56 @@ pi-backend-publish:
 	cd "$$DEST" && sha256sum "$(PI_BACKEND_IMAGE_NAME).img.xz" | sudo tee "$(PI_BACKEND_IMAGE_NAME).img.xz.sha256" >/dev/null
 	echo "$(GREEN)✓ Published $$DEST/$(PI_BACKEND_IMAGE_NAME).img.xz$(NC)"
 
-# Fetch every binary the image installs, at its pinned version.
-pi-backend-inputs:
-	echo "$(YELLOW)→ Fetching pi-backend inputs from artifacts...$(NC)"
-	rm -rf "$(PI_BACKEND_INPUTS)"
-	mkdir -p "$(PI_BACKEND_INPUTS)/tmp"
+# Fetch every binary the image installs, at its pinned version, for one
+# architecture ($(1)) into one inputs directory ($(2)).
+define backend_inputs
+	echo "$(YELLOW)→ Fetching $(1) backend inputs from artifacts...$(NC)"
+	IN="$(2)"
+	rm -rf "$$IN"
+	mkdir -p "$$IN/tmp"
 	for bv in $(PI_BACKEND_DEEVNET_BINARIES); do
 	  b="$${bv%%:*}"; v="$${bv#*:}"
-	  curl -fsSL -o "$(PI_BACKEND_INPUTS)/$$b" "$(ARTIFACT_URL)/binaries/$$b/$$b-$$v-linux-arm64"
-	  file "$(PI_BACKEND_INPUTS)/$$b" | grep -q 'ARM aarch64' || { echo "$(RED)✗ $$b is not an arm64 binary$(NC)"; exit 1; }
+	  curl -fsSL -o "$$IN/$$b" "$(ARTIFACT_URL)/binaries/$$b/$$b-$$v-linux-$(1)"
 	done
-	cd "$(PI_BACKEND_INPUTS)/tmp"
-	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VLOGS_TARBALL)"
-	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMUTILS_TARBALL)"
-	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMCLUSTER_TARBALL)"
-	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_ALERTING_PATH)/$(PI_BACKEND_ALERTMANAGER_TARBALL)"
-	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_ALERTING_PATH)/$(PI_BACKEND_NTFY_TARBALL)"
+	cd "$$IN/tmp"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VLOGS_TARBALL_$(1))"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMUTILS_TARBALL_$(1))"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_UPSTREAM_PATH)/$(PI_BACKEND_VMCLUSTER_TARBALL_$(1))"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_ALERTING_PATH)/$(PI_BACKEND_ALERTMANAGER_TARBALL_$(1))"
+	curl -fsSL -O "$(ARTIFACT_URL)/$(PI_BACKEND_ALERTING_PATH)/$(PI_BACKEND_NTFY_TARBALL_$(1))"
 	printf '%s  %s\n' \
-	  "$(PI_BACKEND_VLOGS_SHA256)" "$(PI_BACKEND_VLOGS_TARBALL)" \
-	  "$(PI_BACKEND_VMUTILS_SHA256)" "$(PI_BACKEND_VMUTILS_TARBALL)" \
-	  "$(PI_BACKEND_VMCLUSTER_SHA256)" "$(PI_BACKEND_VMCLUSTER_TARBALL)" \
-	  "$(PI_BACKEND_ALERTMANAGER_SHA256)" "$(PI_BACKEND_ALERTMANAGER_TARBALL)" \
-	  "$(PI_BACKEND_NTFY_SHA256)" "$(PI_BACKEND_NTFY_TARBALL)" | sha256sum -c -
-	tar -xzf "$(PI_BACKEND_VLOGS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" victoria-logs-prod
-	tar -xzf "$(PI_BACKEND_VMUTILS_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmauth-prod vmalert-prod
-	tar -xzf "$(PI_BACKEND_VMCLUSTER_TARBALL)" -C "$(PI_BACKEND_INPUTS)" vmstorage-prod vminsert-prod vmselect-prod
-	tar -xzf "$(PI_BACKEND_ALERTMANAGER_TARBALL)" -C "$(PI_BACKEND_INPUTS)" --strip-components=1 \
-	  alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-arm64/alertmanager
-	tar -xzf "$(PI_BACKEND_NTFY_TARBALL)" -C "$(PI_BACKEND_INPUTS)" --strip-components=1 \
-	  ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_arm64/ntfy
-	curl -fsSL -O "$(ARTIFACT_URL)/binaries/silo/silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64"
-	curl -fsSL -O "$(ARTIFACT_URL)/binaries/silo/silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64.sha256"
-	sha256sum -c "silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64.sha256"
-	install -m 0755 "silo-$(PI_BACKEND_SILO_VERSION)-linux-arm64" "$(PI_BACKEND_INPUTS)/silo"
-	for b in vmalert-prod vmstorage-prod vminsert-prod vmselect-prod alertmanager ntfy silo; do
-	  file "$(PI_BACKEND_INPUTS)/$$b" | grep -q 'ARM aarch64' || { echo "$(RED)✗ $$b is not an arm64 binary$(NC)"; exit 1; }
+	  "$(PI_BACKEND_VLOGS_SHA256_$(1))" "$(PI_BACKEND_VLOGS_TARBALL_$(1))" \
+	  "$(PI_BACKEND_VMUTILS_SHA256_$(1))" "$(PI_BACKEND_VMUTILS_TARBALL_$(1))" \
+	  "$(PI_BACKEND_VMCLUSTER_SHA256_$(1))" "$(PI_BACKEND_VMCLUSTER_TARBALL_$(1))" \
+	  "$(PI_BACKEND_ALERTMANAGER_SHA256_$(1))" "$(PI_BACKEND_ALERTMANAGER_TARBALL_$(1))" \
+	  "$(PI_BACKEND_NTFY_SHA256_$(1))" "$(PI_BACKEND_NTFY_TARBALL_$(1))" | sha256sum -c -
+	tar -xzf "$(PI_BACKEND_VLOGS_TARBALL_$(1))" -C "$$IN" victoria-logs-prod
+	tar -xzf "$(PI_BACKEND_VMUTILS_TARBALL_$(1))" -C "$$IN" vmauth-prod vmalert-prod
+	tar -xzf "$(PI_BACKEND_VMCLUSTER_TARBALL_$(1))" -C "$$IN" vmstorage-prod vminsert-prod vmselect-prod
+	tar -xzf "$(PI_BACKEND_ALERTMANAGER_TARBALL_$(1))" -C "$$IN" --strip-components=1 \
+	  alertmanager-$(PI_BACKEND_ALERTMANAGER_VERSION).linux-$(1)/alertmanager
+	tar -xzf "$(PI_BACKEND_NTFY_TARBALL_$(1))" -C "$$IN" --strip-components=1 \
+	  ntfy_$(PI_BACKEND_NTFY_VERSION)_linux_$(1)/ntfy
+	curl -fsSL -O "$(ARTIFACT_URL)/binaries/silo/silo-$(PI_BACKEND_SILO_VERSION)-linux-$(1)"
+	curl -fsSL -O "$(ARTIFACT_URL)/binaries/silo/silo-$(PI_BACKEND_SILO_VERSION)-linux-$(1).sha256"
+	sha256sum -c "silo-$(PI_BACKEND_SILO_VERSION)-linux-$(1).sha256"
+	install -m 0755 "silo-$(PI_BACKEND_SILO_VERSION)-linux-$(1)" "$$IN/silo"
+	for b in $(foreach bv,$(PI_BACKEND_DEEVNET_BINARIES),$(firstword $(subst :, ,$(bv)))) \
+	         victoria-logs-prod vmauth-prod vmalert-prod vmstorage-prod vminsert-prod vmselect-prod alertmanager ntfy silo; do
+	  file "$$IN/$$b" | grep -q '$(PI_BACKEND_MAGIC_$(1))' || { echo "$(RED)✗ $$b is not a $(1) binary$(NC)"; exit 1; }
 	done
 	: "Grafana and its plugin stay packed; the config play unpacks them into the image"
-	curl -fsSL -o "$(PI_BACKEND_INPUTS)/grafana.tar.gz" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PATH)/$(PI_BACKEND_GRAFANA_TARBALL)"
-	curl -fsSL -o "$(PI_BACKEND_INPUTS)/grafana-plugin.zip" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PLUGIN)"
+	curl -fsSL -o "$$IN/grafana.tar.gz" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PATH)/$(PI_BACKEND_GRAFANA_TARBALL_$(1))"
+	curl -fsSL -o "$$IN/grafana-plugin.zip" "$(ARTIFACT_URL)/$(PI_BACKEND_GRAFANA_PLUGIN)"
 	printf '%s  %s\n%s  %s\n' \
-	  "$(PI_BACKEND_GRAFANA_SHA256)" "$(PI_BACKEND_INPUTS)/grafana.tar.gz" \
-	  "$(PI_BACKEND_GRAFANA_PLUGIN_SHA256)" "$(PI_BACKEND_INPUTS)/grafana-plugin.zip" | sha256sum -c -
-	rm -rf "$(PI_BACKEND_INPUTS)/tmp"
-	echo "$(GREEN)✓ Inputs ready in $(PI_BACKEND_INPUTS)$(NC)"
+	  "$(PI_BACKEND_GRAFANA_SHA256_$(1))" "$$IN/grafana.tar.gz" \
+	  "$(PI_BACKEND_GRAFANA_PLUGIN_SHA256)" "$$IN/grafana-plugin.zip" | sha256sum -c -
+	rm -rf "$$IN/tmp"
+	echo "$(GREEN)✓ Inputs ready in $$IN$(NC)"
+endef
+
+pi-backend-inputs:
+	$(call backend_inputs,arm64,$(PI_BACKEND_INPUTS))
 
 # Build base Bookworm image (reuses sdr-bookworm.pkr.hcl). The a_autoprov user
 # it adds is removed again by pi-backend-config.
@@ -721,6 +753,140 @@ pi-compress-image-backend: $(PI_BACKEND_AUTOPROV_IMG)
 	echo "$(GREEN)→ Compressing image with xz (this may take a few minutes)...$(NC)"
 	sudo xz -f -k -6 -T0 "$(PI_BACKEND_AUTOPROV_IMG)"
 	echo "$(GREEN)✓ Compressed image: $(PI_BACKEND_AUTOPROV_IMG).xz$(NC)"
+
+# ------------------------------------------------------------
+# Take-home VM image Build (CHG-0074)
+# ------------------------------------------------------------
+# The Pi's take-home backend as an amd64 virtual machine (qcow2) for Proxmox
+# and KVM: the same services, deevnet-kit and self-test, built by the same
+# configuration play with medium=vm (docs/vm-backend.md). It starts from
+# Debian's official bookworm "nocloud" image, as the Pi image starts from
+# Raspberry Pi OS: no cloud-init, and the play locks the root login that image
+# leaves open. A VM has no boot partition to edit, so its first boot asks on the
+# console (deevnet-kit setup).
+
+VM_BACKEND_IMAGE_NAME := debian-bookworm-$(PI_IMAGE_PLATFORM)-vm-backend
+VM_BACKEND_BUILD      := $(CURDIR)/build/vm-backend
+VM_BACKEND_INPUTS     := $(CURDIR)/build/vm-backend-inputs
+VM_BACKEND_RAW        := $(VM_BACKEND_BUILD)/$(VM_BACKEND_IMAGE_NAME).raw
+VM_BACKEND_QCOW2      := $(CURDIR)/$(VM_BACKEND_IMAGE_NAME).qcow2
+VM_BACKEND_MNT        := /mnt/vm-backend-image
+# The disk the VM sees. qcow2 is sparse, so the file stays small; the root
+# file system grows to fill a bigger disk on every boot (deevnet-kit-growroot).
+VM_BACKEND_DISK_SIZE  := 16G
+
+# Debian's dated build, pinned with the SHA512 Debian publishes beside it.
+VM_DEBIAN_BUILD  := 20261117-2665
+VM_DEBIAN_IMAGE  := debian-12-nocloud-amd64-$(VM_DEBIAN_BUILD).qcow2
+VM_DEBIAN_SHA512 := 43888727748a395aeec05646db5042fdccec9e9d8bb1af6250fb9476ad3925abb483695753075d6ede9e7a4ca3825a2d10cf0ba3f39663e2a402144d94294369
+VM_DEBIAN_URL    := https://cloud.debian.org/images/cloud/bookworm/$(VM_DEBIAN_BUILD)/$(VM_DEBIAN_IMAGE)
+VM_DEBIAN_PATH   := vm-images/debian
+
+# apt inside the image, throttled across the core router (KB/s; 0 = no limit).
+APT_DL_LIMIT ?= 1500
+
+# Full VM image = inputs + base disk + offline config + qcow2
+vm-backend: vm-backend-inputs vm-backend-base vm-backend-config vm-backend-compress
+	echo "$(GREEN)✓ VM backend image complete: $(VM_BACKEND_QCOW2)$(NC)"
+
+# One-time, on the Builder: the amd64 releases, and Debian's base image.
+vm-backend-stage-upstream:
+	$(call backend_stage_upstream,amd64)
+	A="$(PI_BACKEND_ARTIFACTS_ROOT)/$(VM_DEBIAN_PATH)"
+	sudo install -d -o nginx -g nginx -m 0755 "$$A"
+	if [[ -f "$$A/$(VM_DEBIAN_IMAGE)" ]] && echo "$(VM_DEBIAN_SHA512)  $$A/$(VM_DEBIAN_IMAGE)" | sha512sum -c --quiet - 2>/dev/null; then
+	  echo "have $(VM_DEBIAN_PATH)/$(VM_DEBIAN_IMAGE)"
+	else
+	  TMP="$$(mktemp -d -p /srv)"
+	  trap 'rm -rf "$$TMP"' EXIT
+	  curl -fsSL --limit-rate "$(UPSTREAM_RATE)" -o "$$TMP/$(VM_DEBIAN_IMAGE)" "$(VM_DEBIAN_URL)"
+	  echo "$(VM_DEBIAN_SHA512)  $$TMP/$(VM_DEBIAN_IMAGE)" | sha512sum -c -
+	  sudo install -o nginx -g nginx -m 0644 "$$TMP/$(VM_DEBIAN_IMAGE)" "$$A/"
+	fi
+	echo "$(GREEN)✓ Debian base staged under $$A$(NC)"
+
+vm-backend-inputs:
+	$(call backend_inputs,amd64,$(VM_BACKEND_INPUTS))
+
+# Debian's image as a raw disk of VM_BACKEND_DISK_SIZE, its root (partition 1)
+# grown to fill it.
+vm-backend-base: check-loop-devices
+	echo "$(GREEN)→ Preparing the Debian base disk...$(NC)"
+	mkdir -p "$(VM_BACKEND_BUILD)"
+	BASE="$(VM_BACKEND_BUILD)/$(VM_DEBIAN_IMAGE)"
+	if ! { [[ -f "$$BASE" ]] && echo "$(VM_DEBIAN_SHA512)  $$BASE" | sha512sum -c --quiet - 2>/dev/null; }; then
+	  curl -fsSL -o "$$BASE" "$(ARTIFACT_URL)/$(VM_DEBIAN_PATH)/$(VM_DEBIAN_IMAGE)"
+	  echo "$(VM_DEBIAN_SHA512)  $$BASE" | sha512sum -c -
+	fi
+	rm -f "$(VM_BACKEND_RAW)"
+	qemu-img convert -f qcow2 -O raw "$$BASE" "$(VM_BACKEND_RAW)"
+	qemu-img resize -f raw "$(VM_BACKEND_RAW)" "$(VM_BACKEND_DISK_SIZE)"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(VM_BACKEND_RAW)")"
+	trap 'sudo losetup -d "$$LOOPDEV" 2>/dev/null || true' EXIT
+	sudo partprobe "$$LOOPDEV" 2>/dev/null || true
+	sudo udevadm settle
+	: "GPT: move the backup header to the new end, then grow the root partition"
+	sudo sfdisk --relocate gpt-bak-std "$$LOOPDEV"
+	sudo partprobe "$$LOOPDEV" 2>/dev/null || true
+	sudo growpart "$$LOOPDEV" 1
+	sudo e2fsck -f -y "$${LOOPDEV}p1" || true
+	sudo resize2fs "$${LOOPDEV}p1"
+	echo "$(GREEN)✓ Base disk ready: $(VM_BACKEND_RAW)$(NC)"
+
+# Offline configuration: the Pi's play, medium=vm, against the mounted root.
+vm-backend-config: $(VM_BACKEND_RAW)
+	echo "$(GREEN)→ Applying backend config to the VM disk (offline Ansible)...$(NC)"
+	PLAYBOOK="$(CURDIR)/ansible/playbooks/pi-backend-config.yml"
+	INVENTORY="$(CURDIR)/ansible/inventories/local.yml"
+	[[ -d "$(VM_BACKEND_INPUTS)" ]] || { echo "$(RED)✗ No inputs: run make vm-backend-inputs$(NC)"; exit 1; }
+	[[ -x "$(PI_PKI_TOOLS)/deevnet-pki-owner.sh" && -x "$(PI_PKI_TOOLS)/deevnet-pki-media.sh" && -f "$(PI_PKI_TOOLS)/deevnet-pki-owner.cnf" ]] \
+	  || { echo "$(RED)✗ No owner PKI tools at $(PI_PKI_TOOLS)$(NC)"; exit 1; }
+	TOOLS_REF="$$(git -C "$(PI_PKI_TOOLS)" rev-parse --short HEAD)$$(git -C "$(PI_PKI_TOOLS)" diff --quiet -- . || echo -dirty)"
+	M="$(VM_BACKEND_MNT)"
+	sudo umount -R "$$M" 2>/dev/null || true
+	sudo mkdir -p "$$M"
+	LOOPDEV="$$(sudo losetup --find --partscan --show "$(VM_BACKEND_RAW)")"
+	RESOLV_LINK=""
+	cleanup() {
+	  if [[ -n "$$RESOLV_LINK" ]]; then sudo rm -f "$$M/etc/resolv.conf"; sudo ln -s "$$RESOLV_LINK" "$$M/etc/resolv.conf"; fi
+	  sudo umount -R "$$M" 2>/dev/null || true
+	  sudo losetup -d "$$LOOPDEV" 2>/dev/null || true
+	}
+	trap cleanup EXIT
+	sudo partprobe "$$LOOPDEV" 2>/dev/null || true
+	sudo udevadm settle || true
+	for i in {1..10}; do [[ -b "$${LOOPDEV}p1" ]] && break; sleep 0.2; done
+	[[ -b "$${LOOPDEV}p1" ]] || { echo "$(RED)✗ No $${LOOPDEV}p1$(NC)"; exit 1; }
+	sudo mount "$${LOOPDEV}p1" "$$M"
+	sudo mount --bind /dev "$$M/dev"
+	sudo mount -t proc proc "$$M/proc"
+	sudo mount -t sysfs sys "$$M/sys"
+	: "Debian's resolv.conf points into /run, empty in a chroot: the build host's for the build, put back after"
+	if [[ -L "$$M/etc/resolv.conf" ]]; then
+	  RESOLV_LINK="$$(readlink "$$M/etc/resolv.conf")"
+	  sudo rm -f "$$M/etc/resolv.conf"
+	  sudo cp -L /etc/resolv.conf "$$M/etc/resolv.conf"
+	fi
+	sudo ansible-playbook -i "$$INVENTORY" "$$PLAYBOOK" \
+	  --extra-vars "medium=vm chroot_root=$$M pi_backend_inputs=$(VM_BACKEND_INPUTS) pki_tools_src=$(PI_PKI_TOOLS) pki_tools_ref=$$TOOLS_REF apt_dl_limit=$(APT_DL_LIMIT)"
+	echo "$(GREEN)✓ VM backend config applied$(NC)"
+
+# The raw disk as a compressed qcow2, with its sha256 beside it.
+vm-backend-compress: $(VM_BACKEND_RAW)
+	echo "$(GREEN)→ Writing the compressed qcow2...$(NC)"
+	qemu-img convert -f raw -O qcow2 -c "$(VM_BACKEND_RAW)" "$(VM_BACKEND_QCOW2)"
+	cd "$(CURDIR)" && sha256sum "$(VM_BACKEND_IMAGE_NAME).qcow2" > "$(VM_BACKEND_IMAGE_NAME).qcow2.sha256"
+	echo "$(GREEN)✓ $(VM_BACKEND_QCOW2) ($$(du -h "$(VM_BACKEND_QCOW2)" | cut -f1))$(NC)"
+
+# Publish beside the Pi image in the tenant downloads tree (CHG-0025). Then
+# push it to the observability store as the Pi image is (--tags tenant-downloads).
+vm-backend-publish:
+	[[ -f "$(VM_BACKEND_QCOW2)" ]] || { echo "$(RED)✗ No $(VM_BACKEND_QCOW2): run make vm-backend$(NC)"; exit 1; }
+	DEST="$(PI_BACKEND_ARTIFACTS_ROOT)/tenant/vm"
+	sudo install -d -o nginx -g nginx -m 0755 "$$DEST"
+	sudo install -o nginx -g nginx -m 0644 "$(VM_BACKEND_QCOW2)" "$$DEST/"
+	cd "$$DEST" && sha256sum "$(VM_BACKEND_IMAGE_NAME).qcow2" | sudo tee "$(VM_BACKEND_IMAGE_NAME).qcow2.sha256" >/dev/null
+	echo "$(GREEN)✓ Published $$DEST/$(VM_BACKEND_IMAGE_NAME).qcow2$(NC)"
 
 # ------------------------------------------------------------
 # Supporting targets

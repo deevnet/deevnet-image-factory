@@ -1,0 +1,14 @@
+#!/bin/sh
+# deevnet-kit - grow the root partition and its file system to fill the disk.
+# growpart exits 1 when there is nothing to grow, which is most boots.
+set -eu
+src=$(findmnt -no SOURCE /)
+disk=/dev/$(lsblk -no PKNAME "$src")
+part=$(cat "/sys/class/block/$(basename "$src")/partition")
+rc=0
+growpart "$disk" "$part" || rc=$?
+case $rc in
+  0) resize2fs "$src" ;;
+  1) ;;
+  *) exit "$rc" ;;
+esac
