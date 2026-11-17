@@ -23,6 +23,8 @@ StandardError=tty
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
+# A clear screen: the questions, not the boot messages above them.
+TTYVTDisallocate=yes
 # Kernel messages would land in the middle of the questions.
 ExecStartPre=-/usr/bin/dmesg --console-off
 ExecStartPost=-/usr/bin/dmesg --console-on
