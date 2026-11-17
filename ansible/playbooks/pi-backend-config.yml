@@ -607,7 +607,7 @@
     # owner's login comes from deevnet-kit setup on the console; root has none.
     - name: Lock root's password
       ansible.builtin.command:
-        cmd: "chroot {{ chroot_root }} usermod --lock --password '!' root"
+        cmd: "chroot {{ chroot_root }} usermod --password '!' root"
       changed_when: true
       when: backend_vm
 
