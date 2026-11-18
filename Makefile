@@ -162,6 +162,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
 .PHONY: vm-backend vm-backend-stage-upstream vm-backend-inputs vm-backend-base vm-backend-config vm-backend-compress vm-backend-publish
 .PHONY: iso-backend iso-backend-boot iso-backend-payload iso-backend-image iso-backend-publish
+.PHONY: vm-formats vm-formats-publish
 .PHONY: pi-pki pi-pki-image pi-pki-config pi-pki-compress pi-pki-publish
 .PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-backend-publish pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
@@ -195,6 +196,8 @@ help:
 	@echo "  vm-backend-publish     Publish the built .qcow2 to the tenant downloads tree (sudo)"
 	@echo "  iso-backend            Build the take-home installer ISO (hybrid BIOS/UEFI) from the VM backend's disk (sudo)"
 	@echo "  iso-backend-publish    Publish the built .iso to the tenant downloads tree (sudo)"
+	@echo "  vm-formats             Convert the VM backend's disk, unchanged, to an OVA (VirtualBox) and a VHDX (Hyper-V Gen2)"
+	@echo "  vm-formats-publish     Publish the OVA and the zipped VHDX to the tenant downloads tree (sudo)"
 	@echo "  pi-pki                 Build the offline CA ceremony image for a Raspberry Pi 4 (no network, tools baked in)"
 	@echo "  pi-pki-publish         Publish the ceremony image and its sha256 to the artifact server (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
@@ -1016,6 +1019,52 @@ iso-backend-publish:
 	sudo install -o nginx -g nginx -m 0644 "$(ISO_BACKEND_ISO)" "$$DEST/"
 	cd "$$DEST" && sha256sum "$(ISO_BACKEND_IMAGE_NAME).iso" | sudo tee "$(ISO_BACKEND_IMAGE_NAME).iso.sha256" >/dev/null
 	echo "$(GREEN)✓ Published $$DEST/$(ISO_BACKEND_IMAGE_NAME).iso$(NC)"
+
+# ------------------------------------------------------------
+# Take-home VM image for VirtualBox and Hyper-V (CHG-0076)
+# ------------------------------------------------------------
+# The VM's disk (vm-backend's raw image), converted unchanged, in the formats a
+# Windows computer runs (docs/vm-formats.md): an OVA for VirtualBox (a
+# stream-optimized VMDK, an OVF 1.0 descriptor and a manifest, written by
+# scripts/vm-formats/ova.py) and a dynamic VHDX for a Hyper-V Generation 2
+# machine, zipped, since Windows opens a zip itself. Nothing is rebuilt: each
+# disk is compared with the raw disk before it is packed.
+
+VM_FORMATS_BUILD := $(CURDIR)/build/vm-formats
+VM_FORMATS_VMDK  := $(VM_FORMATS_BUILD)/$(VM_BACKEND_IMAGE_NAME)-disk001.vmdk
+VM_FORMATS_VHDX  := $(VM_FORMATS_BUILD)/$(VM_BACKEND_IMAGE_NAME).vhdx
+VM_FORMATS_OVA   := $(CURDIR)/$(VM_BACKEND_IMAGE_NAME).ova
+VM_FORMATS_ZIP   := $(CURDIR)/$(VM_BACKEND_IMAGE_NAME).vhdx.zip
+
+vm-formats:
+	[[ -f "$(VM_BACKEND_RAW)" ]] || { echo "$(RED)✗ No $(VM_BACKEND_RAW): run make vm-backend$(NC)"; exit 1; }
+	mkdir -p "$(VM_FORMATS_BUILD)"
+	rm -f "$(VM_FORMATS_VMDK)" "$(VM_FORMATS_VHDX)" "$(VM_FORMATS_OVA)" "$(VM_FORMATS_ZIP)"
+	echo "$(GREEN)→ Converting the VM's disk to a stream-optimized VMDK and a dynamic VHDX...$(NC)"
+	qemu-img convert -f raw -O vmdk -o subformat=streamOptimized "$(VM_BACKEND_RAW)" "$(VM_FORMATS_VMDK)"
+	qemu-img convert -f raw -O vhdx -o subformat=dynamic "$(VM_BACKEND_RAW)" "$(VM_FORMATS_VHDX)"
+	echo "$(GREEN)→ Comparing each with the VM's disk...$(NC)"
+	qemu-img compare -f raw -F vmdk "$(VM_BACKEND_RAW)" "$(VM_FORMATS_VMDK)"
+	qemu-img compare -f raw -F vhdx "$(VM_BACKEND_RAW)" "$(VM_FORMATS_VHDX)"
+	echo "$(GREEN)→ Packing the OVA and zipping the VHDX...$(NC)"
+	python3 "$(CURDIR)/scripts/vm-formats/ova.py" build "$(VM_BACKEND_IMAGE_NAME)" "$(VM_FORMATS_VMDK)" "$$(stat -c %s "$(VM_BACKEND_RAW)")" "$(VM_FORMATS_OVA)"
+	python3 "$(CURDIR)/scripts/vm-formats/ova.py" check "$(VM_FORMATS_OVA)"
+	zip -q -j -6 "$(VM_FORMATS_ZIP)" "$(VM_FORMATS_VHDX)"
+	unzip -tq "$(VM_FORMATS_ZIP)"
+	cd "$(CURDIR)" && sha256sum "$(VM_BACKEND_IMAGE_NAME).ova" > "$(VM_BACKEND_IMAGE_NAME).ova.sha256"
+	cd "$(CURDIR)" && sha256sum "$(VM_BACKEND_IMAGE_NAME).vhdx.zip" > "$(VM_BACKEND_IMAGE_NAME).vhdx.zip.sha256"
+	echo "$(GREEN)✓ $(VM_FORMATS_OVA) ($$(du -h "$(VM_FORMATS_OVA)" | cut -f1)), $(VM_FORMATS_ZIP) ($$(du -h "$(VM_FORMATS_ZIP)" | cut -f1))$(NC)"
+
+# Publish both beside the qcow2 in the tenant downloads tree. Then push them to
+# the observability store throttled, as the qcow2 was.
+vm-formats-publish:
+	for f in "$(VM_FORMATS_OVA)" "$(VM_FORMATS_ZIP)"; do [[ -f "$$f" ]] || { echo "$(RED)✗ No $$f: run make vm-formats$(NC)"; exit 1; }; done
+	DEST="$(PI_BACKEND_ARTIFACTS_ROOT)/tenant/vm"
+	sudo install -d -o nginx -g nginx -m 0755 "$$DEST"
+	sudo install -o nginx -g nginx -m 0644 "$(VM_FORMATS_OVA)" "$(VM_FORMATS_ZIP)" "$$DEST/"
+	cd "$$DEST" && sha256sum "$(VM_BACKEND_IMAGE_NAME).ova" | sudo tee "$(VM_BACKEND_IMAGE_NAME).ova.sha256" >/dev/null
+	cd "$$DEST" && sha256sum "$(VM_BACKEND_IMAGE_NAME).vhdx.zip" | sudo tee "$(VM_BACKEND_IMAGE_NAME).vhdx.zip.sha256" >/dev/null
+	echo "$(GREEN)✓ Published the OVA and the zipped VHDX to $$DEST$(NC)"
 
 # ------------------------------------------------------------
 # Supporting targets
