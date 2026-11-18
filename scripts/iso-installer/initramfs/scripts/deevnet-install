@@ -1,0 +1,12 @@
+# initramfs-tools boot script (boot=deevnet-install): instead of mounting a
+# root file system, run the take-home installer. It ends by rebooting.
+mountroot()
+{
+	/usr/bin/deevnet-install
+	# The installer only returns if the owner asked for a shell and left it.
+	panic "The installer has stopped."
+}
+
+mount_top() { :; }
+mount_premount() { :; }
+mount_bottom() { :; }

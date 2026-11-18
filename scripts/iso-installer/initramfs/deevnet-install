@@ -1,0 +1,183 @@
+#!/bin/sh
+# The take-home installer (CHG-0075). Runs in the ISO's initramfs: finds the
+# medium it booted from, lists the computer's disks without that one, writes
+# the take-home system to the disk the owner names and confirms, reads it back
+# to check it, and reboots. The system's first boot is the virtual machine's:
+# deevnet-kit setup on the console, and the root grown to fill the disk.
+
+PATH=/usr/lib/deevnet-installer/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+LABEL=DEEVNET_TAKEHOME
+MEDIA=/run/deevnet-media
+IMAGE=$MEDIA/deevnet/system.img.zst
+SUMS=$MEDIA/deevnet/system.img.sha256
+SIZEFILE=$MEDIA/deevnet/system.img.size
+
+say() { printf '%s\n' "$*"; }
+rule() { say "------------------------------------------------------------------------"; }
+
+shell_or_off()
+{
+	say ""
+	say "Type 'shell' for a shell, or anything else to power off."
+	printf '> '
+	read -r ans
+	if [ "$ans" = shell ]; then
+		say "Type 'exit' to come back to the installer."
+		sh -i
+		return 0
+	fi
+	power off
+}
+
+# power off | reboot, through the kernel: the initramfs has no init to ask.
+power()
+{
+	sync
+	echo 1 > /proc/sys/kernel/sysrq
+	case "$1" in
+	off) echo o > /proc/sysrq-trigger ;;
+	*)   echo b > /proc/sysrq-trigger ;;
+	esac
+	sleep 30
+}
+
+fail()
+{
+	rule
+	say "The install stopped: $*"
+	shell_or_off
+}
+
+# The medium: a USB stick or an optical drive with our label.
+find_media()
+{
+	udevadm settle --timeout=30 2>/dev/null || true
+	i=0
+	while [ $i -lt 30 ]; do
+		dev=$(blkid -L "$LABEL" 2>/dev/null)
+		[ -n "$dev" ] && { echo "$dev"; return 0; }
+		sleep 1
+		i=$((i + 1))
+	done
+	return 1
+}
+
+# The whole disk a device belongs to: sdb for sdb1, sr0 for sr0.
+disk_of()
+{
+	parent=$(lsblk -ndo PKNAME "$1" 2>/dev/null)
+	if [ -n "$parent" ]; then echo "$parent"; else echo "${1##*/}"; fi
+}
+
+# The disks the system may go on: whole disks, not the boot medium, not
+# optical, not RAM or loop, and big enough for the image.
+list_disks()
+{
+	lsblk -dnb -o NAME,TYPE,SIZE | while read -r name type size; do
+		[ "$type" = disk ] || continue
+		[ "$name" = "$BOOTDISK" ] && continue
+		case "$name" in loop*|ram*|zram*|sr*|fd*) continue ;; esac
+		[ "$size" -ge "$IMGSIZE" ] || continue
+		echo "$name"
+	done
+}
+
+show_disks()
+{
+	say ""
+	say "Disks on this computer (the stick this installer runs from is not listed):"
+	say ""
+	lsblk -d -o NAME,SIZE,TRAN,MODEL $(for d in $DISKS; do echo "/dev/$d"; done)
+	say ""
+}
+
+install_to()
+{
+	target=/dev/$1
+	rule
+	say "Writing the take-home system to $target. This takes some minutes."
+	wipefs -a "$target" >/dev/null 2>&1 || true
+	if ! zstd -dc "$IMAGE" | dd of="$target" bs=4M iflag=fullblock oflag=direct status=progress; then
+		fail "writing $target failed."
+		return 1
+	fi
+	sync
+	say ""
+	say "Checking what was written (about as long as the writing took)..."
+	got=$(dd if="$target" bs=4M iflag=direct,count_bytes count="$IMGSIZE" status=none | sha256sum | cut -d' ' -f1)
+	if [ "$got" != "$WANT" ]; then
+		fail "what was written to $target does not match the image (sha256 $got)."
+		return 1
+	fi
+	say "The written system matches the image."
+	# The image is smaller than the disk: put GPT's backup header at the disk's
+	# end. The root partition grows to fill the disk on the system's first boot.
+	sfdisk --relocate gpt-bak-std "$target" >/dev/null 2>&1 || true
+	sync
+	return 0
+}
+
+main()
+{
+	# Kernel messages (a probe of an absent floppy, say) stay off the prompts.
+	echo 1 > /proc/sys/kernel/printk 2>/dev/null || true
+	stty sane 2>/dev/null || true
+	clear 2>/dev/null || printf '\033[H\033[2J'
+	rule
+	say "Deevnet take-home backend: installer"
+	rule
+	say "This writes the take-home system to a disk of this computer, erasing it."
+	say "Use a wired network connection: the installed system has no Wi-Fi."
+
+	dev=$(find_media) || { fail "the installer's own stick (label $LABEL) was not found."; return; }
+	mkdir -p "$MEDIA"
+	mount -t iso9660 -o ro "$dev" "$MEDIA" || { fail "could not mount $dev."; return; }
+	[ -r "$IMAGE" ] && [ -r "$SUMS" ] && [ -r "$SIZEFILE" ] || { fail "the image is missing from $dev."; return; }
+	BOOTDISK=$(disk_of "$dev")
+	WANT=$(cut -d' ' -f1 "$SUMS")
+	IMGSIZE=$(cat "$SIZEFILE")
+
+	while :; do
+		DISKS=$(list_disks)
+		if [ -z "$DISKS" ]; then
+			fail "no disk of at least $((IMGSIZE / 1073741824)) GiB was found, other than the stick."
+			continue
+		fi
+		show_disks
+		say "Type the NAME of the disk to install to (for example $(echo $DISKS | cut -d' ' -f1)),"
+		say "or 'shell' for a shell, or 'off' to power off."
+		printf 'Disk: '
+		read -r choice
+		case "$choice" in
+		shell) sh -i; continue ;;
+		off) power off ;;
+		"") continue ;;
+		esac
+		ok=
+		for d in $DISKS; do [ "$d" = "$choice" ] && ok=1; done
+		if [ -z "$ok" ]; then
+			say ""
+			say "'$choice' is not one of the disks listed."
+			continue
+		fi
+		say ""
+		say "EVERYTHING on /dev/$choice will be erased:"
+		lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL "/dev/$choice"
+		say ""
+		say "Type the disk's name again to erase it and install, or anything else to go back."
+		printf 'Confirm: '
+		read -r again
+		[ "$again" = "$choice" ] || continue
+		install_to "$choice" || continue
+		umount "$MEDIA" 2>/dev/null || true
+		rule
+		say "Installed. Remove the installer stick, then press Enter to restart."
+		say "The first start asks for your user name and sign-in on this screen."
+		read -r _
+		power reboot
+	done
+}
+
+main
