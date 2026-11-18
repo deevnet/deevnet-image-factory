@@ -21,6 +21,12 @@ has no automation user, but it lets root sign in with no password: the play lock
 the build if it is not locked. The owner's settings and login come from `deevnet-kit setup` on the
 console. A change to the backend lands on both media; keep `medium` for what differs.
 
+**`iso-backend` is the installer for that VM's disk** (`docs/iso-backend.md`, CHG-0075): a hybrid
+BIOS/UEFI ISO that writes `vm-backend`'s raw disk, unchanged, to a disk the owner names. Everything
+on it comes from that disk (kernel, `initramfs-tools`, GRUB, Debian's signed shim and CD GRUB);
+don't add a second build of the backend or a download to it. The installer must never list the
+disk it booted from, and writes only after the owner types the disk's name twice.
+
 **The tenant Fedora template is the other exception** (ADR-0028): `make proxmox-fedora-tenant`
 builds `fedora-tenant-<ver>` from the same Packer definition with `flavor=tenant`, and its last step
 removes `a_autoprov` and fails the build if any trace remains. Tenant workloads clone it and hold

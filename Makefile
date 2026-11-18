@@ -161,6 +161,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
 .PHONY: vm-backend vm-backend-stage-upstream vm-backend-inputs vm-backend-base vm-backend-config vm-backend-compress vm-backend-publish
+.PHONY: iso-backend iso-backend-boot iso-backend-payload iso-backend-image iso-backend-publish
 .PHONY: pi-pki pi-pki-image pi-pki-config pi-pki-compress pi-pki-publish
 .PHONY: pi-backend pi-backend-inputs pi-backend-stage-upstream pi-backend-publish pi-bookworm-image-backend pi-resize-image-backend pi-backend-config pi-compress-image-backend
 .PHONY: init-pi init-proxmox proxmox-fedora
@@ -192,6 +193,8 @@ help:
 	@echo "  vm-backend             Build the take-home tenant backend as an amd64 VM image (qcow2, Proxmox/KVM)"
 	@echo "  vm-backend-stage-upstream  Stage the amd64 releases and Debian's base image, throttled (sudo)"
 	@echo "  vm-backend-publish     Publish the built .qcow2 to the tenant downloads tree (sudo)"
+	@echo "  iso-backend            Build the take-home installer ISO (hybrid BIOS/UEFI) from the VM backend's disk (sudo)"
+	@echo "  iso-backend-publish    Publish the built .iso to the tenant downloads tree (sudo)"
 	@echo "  pi-pki                 Build the offline CA ceremony image for a Raspberry Pi 4 (no network, tools baked in)"
 	@echo "  pi-pki-publish         Publish the ceremony image and its sha256 to the artifact server (sudo)"
 	@echo "  proxmox-fedora         Build Proxmox Fedora template (FEDORA_RELEASE=$(FEDORA_RELEASE))"
@@ -887,6 +890,132 @@ vm-backend-publish:
 	sudo install -o nginx -g nginx -m 0644 "$(VM_BACKEND_QCOW2)" "$$DEST/"
 	cd "$$DEST" && sha256sum "$(VM_BACKEND_IMAGE_NAME).qcow2" | sudo tee "$(VM_BACKEND_IMAGE_NAME).qcow2.sha256" >/dev/null
 	echo "$(GREEN)✓ Published $$DEST/$(VM_BACKEND_IMAGE_NAME).qcow2$(NC)"
+
+# ------------------------------------------------------------
+# Take-home installer ISO Build (CHG-0075)
+# ------------------------------------------------------------
+# The VM's disk (vm-backend's raw image) on a hybrid ISO, bootable on BIOS and
+# UEFI, that writes it to a disk of the owner's own computer (docs/iso-backend.md).
+# Everything on the ISO comes from that disk: its kernel, an installer initramfs
+# made by its initramfs-tools, its GRUB for BIOS, and Debian's signed shim and
+# GRUB for UEFI. The backend is built once for both media; nothing new is
+# downloaded.
+
+ISO_BACKEND_IMAGE_NAME := debian-bookworm-$(PI_IMAGE_PLATFORM)-backend-installer
+ISO_BACKEND_BUILD      := $(CURDIR)/build/iso-backend
+ISO_BACKEND_TREE       := $(ISO_BACKEND_BUILD)/tree
+ISO_BACKEND_PAYLOAD    := $(ISO_BACKEND_BUILD)/payload
+ISO_BACKEND_ISO        := $(CURDIR)/$(ISO_BACKEND_IMAGE_NAME).iso
+ISO_BACKEND_LOWER      := /mnt/iso-backend-lower
+ISO_BACKEND_ROOT       := /mnt/iso-backend-root
+ISO_BACKEND_SRC        := $(CURDIR)/scripts/iso-installer
+# The volume label the installer finds its own medium by.
+ISO_BACKEND_LABEL      := DEEVNET_TAKEHOME
+
+# Full ISO = the VM's disk, then the boot files and the payload, then the ISO
+iso-backend: iso-backend-boot iso-backend-payload iso-backend-image
+	echo "$(GREEN)✓ Installer ISO complete: $(ISO_BACKEND_ISO)$(NC)"
+
+# The boot files, made inside the VM's root (read-only, under an overlay that
+# is thrown away): the kernel, the installer initramfs, GRUB for BIOS, and the
+# EFI system partition image with Debian's signed shim and CD GRUB.
+iso-backend-boot: check-loop-devices
+	[[ -f "$(VM_BACKEND_RAW)" ]] || { echo "$(RED)✗ No $(VM_BACKEND_RAW): run make vm-backend$(NC)"; exit 1; }
+	echo "$(GREEN)→ Making the installer's boot files from the VM's disk...$(NC)"
+	L="$(ISO_BACKEND_LOWER)"; R="$(ISO_BACKEND_ROOT)"; O="$(ISO_BACKEND_BUILD)/overlay"
+	sudo umount -R "$$R" 2>/dev/null || true
+	sudo umount "$$L" 2>/dev/null || true
+	sudo rm -rf "$$O"
+	sudo mkdir -p "$$L" "$$R" "$$O/upper" "$$O/work"
+	LOOPDEV="$$(sudo losetup --read-only --find --partscan --show "$(VM_BACKEND_RAW)")"
+	cleanup() {
+	  sudo umount -R "$$R" 2>/dev/null || true
+	  sudo umount "$$L" 2>/dev/null || true
+	  sudo losetup -d "$$LOOPDEV" 2>/dev/null || true
+	  sudo rm -rf "$$O"
+	}
+	trap cleanup EXIT
+	sudo udevadm settle || true
+	for i in {1..10}; do [[ -b "$${LOOPDEV}p1" ]] && break; sleep 0.2; done
+	sudo mount -o ro "$${LOOPDEV}p1" "$$L"
+	sudo mount -t overlay overlay -o "lowerdir=$$L,upperdir=$$O/upper,workdir=$$O/work" "$$R"
+	sudo mount --bind /dev "$$R/dev"
+	sudo mount -t proc proc "$$R/proc"
+	sudo mount -t sysfs sys "$$R/sys"
+	KVER="$$(ls "$$R/lib/modules" | sort -V | tail -1)"
+	sudo cp -r "$(ISO_BACKEND_SRC)/initramfs" "$$R/tmp/deevnet-installer"
+	sudo chroot "$$R" mkinitramfs -d /tmp/deevnet-installer -o /tmp/initrd.img "$$KVER"
+	sudo chroot "$$R" grub-mkimage -O i386-pc-eltorito -d /usr/lib/grub/i386-pc -p /boot/grub \
+	  -o /tmp/eltorito.img biosdisk iso9660 part_msdos part_gpt normal search search_fs_file configfile linux echo test halt
+	T="$(ISO_BACKEND_TREE)"
+	rm -rf "$$T"
+	mkdir -p "$$T/live" "$$T/boot/grub/i386-pc" "$$T/.disk"
+	G="$$R/usr/lib/grub"
+	sudo install -m 0644 "$$R/boot/vmlinuz-$$KVER" "$$T/live/vmlinuz"
+	sudo install -m 0644 "$$R/tmp/initrd.img" "$$T/live/initrd.img"
+	sudo install -m 0644 "$$R/tmp/eltorito.img" "$$G"/i386-pc/*.mod "$$G"/i386-pc/*.lst "$$T/boot/grub/i386-pc/"
+	sudo install -m 0644 "$$G/i386-pc/boot_hybrid.img" "$(ISO_BACKEND_BUILD)/boot_hybrid.img"
+	install -m 0644 "$(ISO_BACKEND_SRC)/grub.cfg" "$$T/boot/grub/grub.cfg"
+	echo "Deevnet take-home backend installer ($(ISO_BACKEND_IMAGE_NAME), kernel $$KVER)" > "$$T/.disk/info"
+	: "The EFI system partition: shim as the removable path, Debian's signed CD GRUB beside it"
+	E="$(ISO_BACKEND_BUILD)/efi.img"
+	rm -f "$$E"
+	mkfs.vfat -C -n DEEVNET_EFI "$$E" 8192 >/dev/null
+	mmd -i "$$E" ::/EFI ::/EFI/BOOT
+	sudo cat "$$R/usr/lib/shim/shimx64.efi.signed" | mcopy -i "$$E" - ::/EFI/BOOT/BOOTX64.EFI
+	sudo cat "$$R/usr/lib/shim/mmx64.efi.signed"   | mcopy -i "$$E" - ::/EFI/BOOT/mmx64.efi
+	sudo cat "$$G/x86_64-efi-signed/gcdx64.efi.signed" | mcopy -i "$$E" - ::/EFI/BOOT/grubx64.efi
+	: "The same tree in the ISO's file system, for tools that copy files to a stick"
+	mcopy -s -i "$$E" ::/EFI "$$T/"
+	sudo chown -R "$$(id -u):$$(id -g)" "$$T" "$(ISO_BACKEND_BUILD)/boot_hybrid.img"
+	echo "$(GREEN)✓ Boot files ready (kernel $$KVER)$(NC)"
+
+# The VM's raw disk, compressed, with the sha256 and size the installer checks
+# what it wrote against.
+iso-backend-payload: $(ISO_BACKEND_PAYLOAD)/system.img.zst
+
+$(ISO_BACKEND_PAYLOAD)/system.img.zst: $(VM_BACKEND_RAW)
+	echo "$(GREEN)→ Compressing the VM's disk for the ISO...$(NC)"
+	P="$(ISO_BACKEND_PAYLOAD)"
+	mkdir -p "$$P"
+	rm -f "$$P"/system.img.*
+	stat -c %s "$(VM_BACKEND_RAW)" > "$$P/system.img.size.tmp"
+	sha256sum < "$(VM_BACKEND_RAW)" | sed 's/ .*/  system.img/' > "$$P/system.img.sha256.tmp"
+	zstd -T0 -12 -q -f "$(VM_BACKEND_RAW)" -o "$$P/system.img.zst.tmp"
+	mv "$$P/system.img.size.tmp" "$$P/system.img.size"
+	mv "$$P/system.img.sha256.tmp" "$$P/system.img.sha256"
+	mv "$$P/system.img.zst.tmp" "$$P/system.img.zst"
+	echo "$(GREEN)✓ Payload: $$(du -h "$$P/system.img.zst" | cut -f1)$(NC)"
+
+# The hybrid ISO: El Torito for BIOS (GRUB) and UEFI (the appended EFI system
+# partition), and an MBR and GPT so it also boots written to a USB stick.
+iso-backend-image:
+	[[ -f "$(ISO_BACKEND_TREE)/live/initrd.img" ]] || { echo "$(RED)✗ No boot files: run make iso-backend-boot$(NC)"; exit 1; }
+	[[ -f "$(ISO_BACKEND_PAYLOAD)/system.img.zst" ]] || { echo "$(RED)✗ No payload: run make iso-backend-payload$(NC)"; exit 1; }
+	echo "$(GREEN)→ Writing the hybrid ISO...$(NC)"
+	rm -f "$(ISO_BACKEND_ISO)"
+	xorriso -as mkisofs -r -J -joliet-long -iso-level 3 \
+	  -V "$(ISO_BACKEND_LABEL)" -o "$(ISO_BACKEND_ISO)" \
+	  --grub2-mbr "$(ISO_BACKEND_BUILD)/boot_hybrid.img" \
+	  --protective-msdos-label -partition_cyl_align off -partition_offset 16 --mbr-force-bootable \
+	  -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b "$(ISO_BACKEND_BUILD)/efi.img" \
+	  -appended_part_as_gpt -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 \
+	  -c /boot/grub/boot.cat \
+	  -b /boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info \
+	  -eltorito-alt-boot -e --interval:appended_partition_2:all:: -no-emul-boot \
+	  -graft-points "$(ISO_BACKEND_TREE)" "/deevnet/=$(ISO_BACKEND_PAYLOAD)"
+	cd "$(CURDIR)" && sha256sum "$(ISO_BACKEND_IMAGE_NAME).iso" > "$(ISO_BACKEND_IMAGE_NAME).iso.sha256"
+	echo "$(GREEN)✓ $(ISO_BACKEND_ISO) ($$(du -h "$(ISO_BACKEND_ISO)" | cut -f1))$(NC)"
+
+# Publish beside the VM image in the tenant downloads tree (CHG-0025), then push
+# it to the observability store, throttled and detached, as the VM image was.
+iso-backend-publish:
+	[[ -f "$(ISO_BACKEND_ISO)" ]] || { echo "$(RED)✗ No $(ISO_BACKEND_ISO): run make iso-backend$(NC)"; exit 1; }
+	DEST="$(PI_BACKEND_ARTIFACTS_ROOT)/tenant/iso"
+	sudo install -d -o nginx -g nginx -m 0755 "$$DEST"
+	sudo install -o nginx -g nginx -m 0644 "$(ISO_BACKEND_ISO)" "$$DEST/"
+	cd "$$DEST" && sha256sum "$(ISO_BACKEND_IMAGE_NAME).iso" | sudo tee "$(ISO_BACKEND_IMAGE_NAME).iso.sha256" >/dev/null
+	echo "$(GREEN)✓ Published $$DEST/$(ISO_BACKEND_IMAGE_NAME).iso$(NC)"
 
 # ------------------------------------------------------------
 # Supporting targets

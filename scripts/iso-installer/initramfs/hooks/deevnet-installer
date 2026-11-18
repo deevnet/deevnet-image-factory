@@ -1,0 +1,16 @@
+#!/bin/sh
+# Copies the take-home installer and the tools it runs into the initramfs.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# Into a directory of their own, at the front of the installer's PATH: klibc's
+# smaller dd, mount and umount already hold the usual paths.
+for bin in /usr/bin/lsblk /usr/sbin/blkid /usr/sbin/sfdisk /usr/sbin/wipefs \
+           /usr/bin/zstd /usr/bin/sha256sum /usr/bin/dd /usr/bin/head /usr/bin/cut \
+           /usr/bin/mount /usr/bin/umount /usr/bin/udevadm /usr/bin/stty; do
+	copy_exec "$bin" "/usr/lib/deevnet-installer/bin/${bin##*/}"
+done
+copy_file script "${CONFDIR}/deevnet-install" /usr/bin/deevnet-install
