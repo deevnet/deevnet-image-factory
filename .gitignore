@@ -22,6 +22,11 @@ fedora-*-manifest.json
 *.iso
 *.iso.sha256
 *.zip
+*.zip.sha256
+*.ova
+*.ova.sha256
+*.vmdk
+*.vhdx
 
 # Explicit Pi image paths (belt + suspenders)
 packer/pi/*.img

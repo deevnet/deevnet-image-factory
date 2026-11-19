@@ -27,6 +27,10 @@ on it comes from that disk (kernel, `initramfs-tools`, GRUB, Debian's signed shi
 don't add a second build of the backend or a download to it. The installer must never list the
 disk it booted from, and writes only after the owner types the disk's name twice.
 
+**`vm-formats` is that VM's disk for VirtualBox and Hyper-V** (`docs/vm-formats.md`, CHG-0076): an
+OVA and a zipped VHDX, converted from `vm-backend`'s raw disk and compared with it before packing.
+Don't change the system in them; a change to the backend goes through `vm-backend`.
+
 **The tenant Fedora template is the other exception** (ADR-0028): `make proxmox-fedora-tenant`
 builds `fedora-tenant-<ver>` from the same Packer definition with `flavor=tenant`, and its last step
 removes `a_autoprov` and fails the build if any trace remains. Tenant workloads clone it and hold
