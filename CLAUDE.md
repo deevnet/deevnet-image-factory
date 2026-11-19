@@ -12,13 +12,13 @@ for Proxmox, each with a manifest JSON.
 
 **The exception is `pi-backend`** (`docs/pi-backend.md`): a take-home image for a tenant's own Pi.
 It is built on the same Packer step, then `pi-backend-config.yml` **removes** `a_autoprov` and fails
-the build if any trace remains. Nothing secret is baked in; `deevnet-kit init` makes the card's CA
+the build if any trace remains. Nothing secret is baked in; `tenant2backend init` makes the card's CA
 and tokens on first boot. Don't add Deevnet access to it.
 
 **`vm-backend` is the same backend as an amd64 VM** (`docs/vm-backend.md`, CHG-0074): the same
 play with `medium=vm`, on Debian's bookworm `nocloud` image instead of the Packer step. That image
 has no automation user, but it lets root sign in with no password: the play locks root and fails
-the build if it is not locked. The owner's settings and login come from `deevnet-kit setup` on the
+the build if it is not locked. The owner's settings and login come from `tenant2backend setup` on the
 console. A change to the backend lands on both media; keep `medium` for what differs. `VM_ARCH=arm64`
 (`make vm-backend-arm64`, CHG-0077) builds the same VM for UTM on Apple Silicon, with the Pi's arm64
 inputs; don't fork the play for it.

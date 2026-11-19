@@ -1,34 +1,34 @@
-# deevnet-kit - Grafana, with Deevnet's settings (ADR-0024, CHG-0024): HTTPS on
+# tenant2backend - Grafana, with Deevnet's settings (ADR-0024, CHG-0024): HTTPS on
 # 3000 with the card's certificate, no sign-up, no anonymous access, no
 # Grafana alerting, and nothing fetched from the internet. The admin password
 # and secret key are the card's own, in grafana.env, written by first boot.
 #
-# auto_assign_org stays ON: Grafana 13 honors the organization deevnet-kit
+# auto_assign_org stays ON: Grafana 13 honors the organization tenant2backend
 # names for the tenant's login only while it is (verified on 13.2.2).
 [Unit]
-Description=Grafana, the tenant's dashboards (deevnet-kit)
-ConditionPathExists=/etc/deevnet-kit/kit.json
+Description=Grafana, the tenant's dashboards (tenant2backend)
+ConditionPathExists=/etc/backend/kit.json
 # After the clock is set: Grafana checks its plugins' signatures against it,
 # and on a clock in the past it refuses every signed plugin, VictoriaLogs'
 # included, until it is restarted (CHG-0056). time-sync.target waits for NTP
 # through systemd-time-wait-sync, for 90 seconds at most.
 Wants=network-online.target time-sync.target
-After=deevnet-kit-firstboot.service network-online.target time-sync.target
+After=backend-firstboot.service network-online.target time-sync.target
 
 [Service]
 User=grafana
 Group=grafana
-SupplementaryGroups=deevnet-kit
+SupplementaryGroups=backend
 WorkingDirectory=/opt/grafana
-EnvironmentFile=/etc/deevnet-kit/grafana.env
+EnvironmentFile=/etc/backend/grafana.env
 Environment=GF_PATHS_DATA=/var/lib/grafana
 Environment=GF_PATHS_LOGS=/var/log/grafana
 Environment=GF_PATHS_PLUGINS=/var/lib/grafana-plugins
 Environment=GF_PATHS_PROVISIONING=/opt/grafana/conf/provisioning
 Environment=GF_SERVER_PROTOCOL=https
 Environment=GF_SERVER_HTTP_PORT=3000
-Environment=GF_SERVER_CERT_FILE=/etc/deevnet-kit/tls/server.pem
-Environment=GF_SERVER_CERT_KEY=/etc/deevnet-kit/tls/server-key.pem
+Environment=GF_SERVER_CERT_FILE=/etc/backend/tls/server.pem
+Environment=GF_SERVER_CERT_KEY=/etc/backend/tls/server-key.pem
 Environment=GF_SECURITY_COOKIE_SECURE=true
 Environment=GF_SECURITY_DISABLE_GRAVATAR=true
 Environment=GF_USERS_ALLOW_SIGN_UP=false

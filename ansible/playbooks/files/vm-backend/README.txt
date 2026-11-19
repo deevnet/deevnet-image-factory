@@ -1,4 +1,4 @@
-deevnet-kit - your take-home Deevnet backend
+tenant2backend - your take-home backend
 ============================================
 
 This virtual machine runs, on a hypervisor of your own, the same services
@@ -11,17 +11,17 @@ your app and devices used on Deevnet at the meetup:
   Metrics (TLS)         port 8427   the same tokens as logs, METRICS_ENDPOINT
   Alerts (HTTPS)        port 443    ntfy for your phone; rules from your Terraform:
                                       terraform output -json alert_rules > rules.json
-                                      sudo deevnet-kit alerts import rules.json
-                                      sudo deevnet-kit notify
+                                      sudo tenant2backend alerts import rules.json
+                                      sudo tenant2backend notify
   Buckets (TLS)         port 9000   S3 buckets, once you add one:
-                                      sudo deevnet-kit bucket add files --quota-gb 5
+                                      sudo tenant2backend bucket add files --quota-gb 5
 
 Nothing on it belongs to Deevnet: no Deevnet account, key or route. The CA,
 certificates, tokens and passwords are made on this machine the first time
 it boots, so no two machines share anything.
 
 It is the Raspberry Pi image's backend on amd64: the same services, the same
-deevnet-kit and the same self-test. Full guide: the Deevnet docs, "Convert a
+tenant2backend and the same self-test. Full guide: the Deevnet docs, "Convert a
 Tenant to a Pi Image" (runbook/tenant).
 
 
@@ -62,22 +62,22 @@ Keeping the tenant and index the same as on Deevnet keeps every topic and
 partition header the same. Find both with  terraform output.  The console
 keyboard is a US layout.
 
-Then deevnet-kit sets the machine up, starts everything and tests it. Give it
+Then tenant2backend sets the machine up, starts everything and tests it. Give it
 a few minutes (Grafana's first start is the slow part). From a computer on
 the same network:
 
   ssh you@<hostname>.local
-  sudo deevnet-kit status          services, endpoints, last self-test
-  sudo deevnet-kit selftest        prove it works end to end (about a minute)
+  sudo tenant2backend status       services, endpoints, last self-test
+  sudo tenant2backend selftest     prove it works end to end (about a minute)
 
 The self-test checks every service, TLS on 8883, 8427 and 3000, a device log
 line sent over MQTT and read back, an app log line sent and read back, and
 your Grafana login, data sources and dashboard. It runs by itself on every
 boot; "status" shows the last result. Each run leaves two log lines marked
-"deevnet-kit selftest"; they age out after 30 days.
+"tenant2backend selftest"; they age out after 30 days.
 
 If the machine's address changes after first boot, the certificate no longer
-names it and "status" says so: run  sudo deevnet-kit regen-certs  (same CA,
+names it and "status" says so: run  sudo tenant2backend regen-certs  (same CA,
 so no device needs a new one). A fixed address on your router avoids it.
 
 
@@ -88,13 +88,13 @@ guide's walkthrough). Re-create it here with
 the password it had on Deevnet (MQTT_PASSWORD in your Deevnet kit.env), in a
 file so it stays out of your shell history:
 
-  sudo deevnet-kit account add backend --subscribe 'sensors/+/telemetry' \
+  sudo tenant2backend account add backend --subscribe 'sensors/+/telemetry' \
     --password-file backend.pw
-  sudo deevnet-kit export ~/deevnet-kit --app backend --password-file backend.pw
+  sudo tenant2backend export ~/backend --app backend --password-file backend.pw
   shred -u backend.pw
 
 writes kit.env (every endpoint, token and login, including MQTT_USERNAME and
-MQTT_PASSWORD, under the same names the Deevnet guide uses) and deevnet-kit-ca.pem
+MQTT_PASSWORD, under the same names the Deevnet guide uses) and backend-ca.pem
 (this machine's CA). The password is checked against the account before it is
 written. An app that ran on Deevnet with a kit.env runs here with this one.
 
@@ -104,16 +104,16 @@ written. An app that ran on Deevnet with a kit.env runs here with this one.
 Recreate each broker account you had on Deevnet. Pass the old password to
 keep it, so the device needs only a new host and CA:
 
-  sudo deevnet-kit account add pico-1 --device pico-1 \
+  sudo tenant2backend account add pico-1 --device pico-1 \
     --publish sensors/pico-1/telemetry --publish log/pico-1 \
     --password-file pico-1.pw           (the device's password from Deevnet)
-  sudo deevnet-kit account list
-  sudo deevnet-kit account rm NAME
+  sudo tenant2backend account list
+  sudo tenant2backend account rm NAME
 
 Topic patterns are relative to your tenant, as on Deevnet. In the firmware,
 change the broker to this machine's IP address (a Pico W cannot resolve
 .local names; give it a fixed address on your router) and the CA to
-deevnet-kit-ca.pem. Everything else stays the same.
+backend-ca.pem. Everything else stays the same.
 
 
 5. SEE YOUR LOGS
@@ -122,14 +122,14 @@ In a browser:  https://bench1.local:3000
 
 Sign in with the user and password in kit.env's GRAFANA_AUTH line
 (user:password). Your browser will warn about the certificate until you trust
-deevnet-kit-ca.pem. Open the "Start here" dashboard: a temperature graph (any device
+backend-ca.pem. Open the "Start here" dashboard: a temperature graph (any device
 log line like {"temp_c": 21.5} shows up there), your device logs and your app
 logs. Explore -> "Device logs" searches everything.
 
 From a shell, the same logs:
 
-  set -a; . ~/deevnet-kit/kit.env; set +a
-  curl -sS --cacert ~/deevnet-kit/deevnet-kit-ca.pem \
+  set -a; . ~/backend/kit.env; set +a
+  curl -sS --cacert ~/backend/backend-ca.pem \
     -H "Authorization: Bearer $LOG_READ_TOKEN" \
     -H "$LOG_SELECT_HEADER: $LOG_DEVICE_PARTITION" \
     "$LOG_ENDPOINT/select/logsql/query" --data-urlencode 'query=*'
@@ -145,7 +145,7 @@ and keeps nothing.
 The Terraform you used for dashboards on Deevnet applies here unchanged: the
 data sources have the same UIDs (deevnet-logs-workloads, -platform,
 -devices). Load kit.env into the environment, point GRAFANA_CA_CERT at
-deevnet-kit-ca.pem, and apply with a state of its own (not your Deevnet state).
+backend-ca.pem, and apply with a state of its own (not your Deevnet state).
 Put org_id = var.grafana_org_id on every grafana_* resource.
 
 
@@ -159,8 +159,8 @@ copy it across - no registry needed:
 
 On the machine (with backend.pw as in 3.):
 
-  sudo deevnet-kit export /opt/my-app --app backend --password-file backend.pw
-  sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
+  sudo tenant2backend export /opt/my-app --app backend --password-file backend.pw
+  sudo cp /opt/backend/examples/my-app.service /etc/systemd/system/
   sudo systemctl daemon-reload && sudo systemctl enable --now my-app
   sudo journalctl -u my-app -f
 
@@ -170,15 +170,15 @@ services on localhost. Its comments say what to change for another name.
 
 WHEN SOMETHING IS WRONG
 -----------------------
-  sudo deevnet-kit selftest            names the check that failed
+  sudo tenant2backend selftest         names the check that failed
   sudo journalctl -u <service> -e      mosquitto, victorialogs, vmauth,
                                        deevnet-log-bridge, grafana,
-                                       deevnet-kit-dashboards
-  sudo deevnet-kit regen-certs         its address changed and devices
+                                       backend-dashboards
+  sudo tenant2backend regen-certs      its address changed and devices
                                        fail with a TLS error (see 2.)
-  sudo deevnet-kit render              rewrite the broker and log config
+  sudo tenant2backend render           rewrite the broker and log config
 
 You are this machine's operator. Grafana's admin password is
-grafana_admin_password in /etc/deevnet-kit/kit.json (root only). Keep a copy
-of /etc/deevnet-kit/: it holds the CA your devices trust.
+grafana_admin_password in /etc/backend/kit.json (root only). Keep a copy
+of /etc/backend/: it holds the CA your devices trust.
 

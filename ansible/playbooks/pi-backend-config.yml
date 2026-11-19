@@ -7,22 +7,22 @@
 # prefix and the reserved log level, the log store's tokens and partition
 # selector on 8427) with no Deevnet API, no Terraform and no Deevnet access.
 #
-#   mosquitto            the broker (TLS only), accounts via `deevnet-kit account`
+#   mosquitto            the broker (TLS only), accounts via `tenant2backend account`
 #   victorialogs         the log store, loopback only
 #   vmauth               the log store's front door, users rendered by deevnet-log-user
 #   deevnet-log-bridge   <tenant>/log/<device> -> the tenant's device partition
 #   grafana              the tenant's dashboards on 3000, organization and data
-#                        sources written by `deevnet-kit dashboards` (CHG-0024)
+#                        sources written by `tenant2backend dashboards` (CHG-0024)
 #   vmstorage, vminsert, the metrics store, loopback only, behind vmauth (CHG-0072)
 #   vmselect
 #   vmalert@<tenant>     the tenant's alert rules, imported from its Terraform
 #   alertmanager         routes the tenant's alerts to its ntfy topics
 #   ntfy                 the phone's alerts, TLS on 443 (CHG-0072)
 #   silo                 the bucket store, TLS on 9000; disabled until the first
-#                        `deevnet-kit bucket add` (CHG-0073)
-#   deevnet-kit          first boot, accounts, status (from deevnet-provisioning-api)
+#                        `tenant2backend bucket add` (CHG-0073)
+#   tenant2backend       first boot, accounts, status (from deevnet-provisioning-api)
 #   deevnet-pki-owner.sh the starter kit for a PKI of the owner's own, which
-#                        `deevnet-kit pki` runs (ADR-0041 §3; deevnet.mgmt scripts/pki)
+#                        `tenant2backend pki` runs (ADR-0041 §3; deevnet.mgmt scripts/pki)
 #   podman               for the tenant's own app
 #
 # NOTHING SECRET IS BAKED IN. The CA, certificates, tokens and passwords are
@@ -34,7 +34,7 @@
 # Raspberry Pi OS card; medium=vm configures Debian's bookworm nocloud image as
 # an amd64 virtual machine. Everything above is the same on both; what differs
 # is how the owner's settings arrive (the card's boot partition, or the console
-# through deevnet-kit setup) and what the base image lacks or leaves open.
+# through tenant2backend setup) and what the base image lacks or leaves open.
 #
 # Usage (from Makefile):
 #   sudo ansible-playbook -i ansible/inventories/local.yml ansible/playbooks/pi-backend-config.yml \
@@ -62,7 +62,7 @@
 
     # Staged by the Makefile from the artifact server.
     pi_backend_binaries:
-      - deevnet-kit
+      - tenant2backend
       - deevnet-log-user
       - deevnet-log-bridge
       - victoria-logs-prod
@@ -85,7 +85,7 @@
       - cryptsetup-bin
 
     # What Debian's nocloud image lacks that a Pi's has: SSH, and the tool
-    # deevnet-kit-growroot uses. The guest agent lets a hypervisor shut the VM
+    # backend-growroot uses. The guest agent lets a hypervisor shut the VM
     # down cleanly and see its address.
     vm_backend_packages:
       - openssh-server
@@ -93,25 +93,25 @@
       - qemu-guest-agent
 
     pi_backend_units:
-      - deevnet-kit-ssh-hostkeys.service
-      - deevnet-kit-firstboot.service
+      - backend-ssh-hostkeys.service
+      - backend-firstboot.service
       - victorialogs.service
       - vmauth.service
       - deevnet-log-bridge.service
       - grafana.service
-      - deevnet-kit-dashboards.service
-      - deevnet-kit-selftest.service
+      - backend-dashboards.service
+      - backend-selftest.service
       - vmstorage.service
       - vminsert.service
       - vmselect.service
       - alertmanager.service
       - ntfy.service
       - deevnet-alerting-sync.path
-      - deevnet-kit-alerting.service
+      - backend-alerting.service
 
     vm_backend_units:
-      - deevnet-kit-setup.service
-      - deevnet-kit-growroot.service
+      - backend-setup.service
+      - backend-growroot.service
 
     # Grafana and its VictoriaLogs plugin: the release tarball and the plugin
     # zip, checksum-verified by the Makefile before this play runs. The same
@@ -222,11 +222,11 @@
     # ------------------------------------------------------------
     # Service users
     # ------------------------------------------------------------
-    # deevnet-kit is the group that may read the server's TLS key; mosquitto
+    # backend is the group that may read the server's TLS key; mosquitto
     # and vmauth's user are its only members.
     - name: Create the TLS key group
       ansible.builtin.command:
-        cmd: "chroot {{ chroot_root }} groupadd --system deevnet-kit"
+        cmd: "chroot {{ chroot_root }} groupadd --system backend"
       register: pi_backend_groupadd
       changed_when: pi_backend_groupadd.rc == 0
       failed_when: pi_backend_groupadd.rc not in [0, 9]  # 9 = exists
@@ -267,7 +267,7 @@
 
     - name: Let mosquitto, the log store, Grafana, ntfy and silo read the TLS key
       ansible.builtin.command:
-        cmd: "chroot {{ chroot_root }} usermod -aG deevnet-kit {{ item }}"
+        cmd: "chroot {{ chroot_root }} usermod -aG backend {{ item }}"
       loop:
         - mosquitto
         - victoria
@@ -290,7 +290,7 @@
 
     - name: Create the writer's vmalert directory
       ansible.builtin.command:
-        cmd: "chroot {{ chroot_root }} install -d -o victoria -g victoria -m 0755 /var/lib/deevnet-kit /var/lib/deevnet-kit/vmalert"
+        cmd: "chroot {{ chroot_root }} install -d -o victoria -g victoria -m 0755 /var/lib/backend /var/lib/backend/vmalert"
       changed_when: true
 
     # ------------------------------------------------------------
@@ -304,6 +304,15 @@
         owner: root
         group: root
       loop: "{{ pi_backend_binaries }}"
+
+    # The tool's name before ADR-0045, for one release: called by it, the tool
+    # says its new name. Remove in the release after.
+    - name: Keep deevnet-kit as a link to tenant2backend
+      ansible.builtin.file:
+        src: tenant2backend
+        dest: "{{ chroot_root }}/usr/local/bin/deevnet-kit"
+        state: link
+        force: true
 
     # ------------------------------------------------------------
     # The starter PKI (ADR-0041 §3, CHG-0056)
@@ -407,7 +416,7 @@
         - /etc/deevnet
         - /etc/mosquitto/conf.d
         - /etc/systemd/system/mosquitto.service.d
-        - /opt/deevnet-kit/examples
+        - /opt/backend/examples
 
     - name: Install configuration files
       ansible.builtin.copy:
@@ -417,18 +426,18 @@
         owner: root
         group: root
       loop:
-        - {src: mosquitto-deevnet-kit.conf, dest: /etc/mosquitto/conf.d/deevnet-kit.conf}
-        - {src: mosquitto-override.conf, dest: /etc/systemd/system/mosquitto.service.d/deevnet-kit.conf}
+        - {src: mosquitto-backend.conf, dest: /etc/mosquitto/conf.d/backend.conf}
+        - {src: mosquitto-override.conf, dest: /etc/systemd/system/mosquitto.service.d/backend.conf}
         - {src: log-user.json, dest: /etc/deevnet/log-user.json}
-        - {src: my-app.service, dest: /opt/deevnet-kit/examples/my-app.service}
-        - {src: deevnet-kit-ssh-hostkeys.service, dest: /etc/systemd/system/deevnet-kit-ssh-hostkeys.service}
-        - {src: deevnet-kit-firstboot.service, dest: /etc/systemd/system/deevnet-kit-firstboot.service}
+        - {src: my-app.service, dest: /opt/backend/examples/my-app.service}
+        - {src: backend-ssh-hostkeys.service, dest: /etc/systemd/system/backend-ssh-hostkeys.service}
+        - {src: backend-firstboot.service, dest: /etc/systemd/system/backend-firstboot.service}
         - {src: victorialogs.service, dest: /etc/systemd/system/victorialogs.service}
         - {src: vmauth.service, dest: /etc/systemd/system/vmauth.service}
         - {src: deevnet-log-bridge.service, dest: /etc/systemd/system/deevnet-log-bridge.service}
         - {src: grafana.service, dest: /etc/systemd/system/grafana.service}
-        - {src: deevnet-kit-dashboards.service, dest: /etc/systemd/system/deevnet-kit-dashboards.service}
-        - {src: deevnet-kit-selftest.service, dest: /etc/systemd/system/deevnet-kit-selftest.service}
+        - {src: backend-dashboards.service, dest: /etc/systemd/system/backend-dashboards.service}
+        - {src: backend-selftest.service, dest: /etc/systemd/system/backend-selftest.service}
         - {src: vmstorage.service, dest: /etc/systemd/system/vmstorage.service}
         - {src: vminsert.service, dest: /etc/systemd/system/vminsert.service}
         - {src: vmselect.service, dest: /etc/systemd/system/vmselect.service}
@@ -437,10 +446,10 @@
         - {src: vmalert@.service, dest: /etc/systemd/system/vmalert@.service}
         - {src: deevnet-alerting-sync.path, dest: /etc/systemd/system/deevnet-alerting-sync.path}
         - {src: deevnet-alerting-sync.service, dest: /etc/systemd/system/deevnet-alerting-sync.service}
-        - {src: deevnet-kit-alerting.service, dest: /etc/systemd/system/deevnet-kit-alerting.service}
-        # Installed, not enabled: deevnet-kit enables it with the first bucket.
+        - {src: backend-alerting.service, dest: /etc/systemd/system/backend-alerting.service}
+        # Installed, not enabled: tenant2backend enables it with the first bucket.
         - {src: silo.service, dest: /etc/systemd/system/silo.service}
-        - {src: README.txt, dest: /opt/deevnet-kit/README.txt}
+        - {src: README.txt, dest: /opt/backend/README.txt}
         # Replaces Debian's licence notice: the first thing the owner sees on
         # login is where to start.
         - {src: motd, dest: /etc/motd}
@@ -458,14 +467,14 @@
     # /boot/firmware when the Pi runs.
     - name: Put the tenant settings on the boot partition
       ansible.builtin.copy:
-        src: files/pi-backend/deevnet-kit.txt
-        dest: "{{ chroot_root }}/boot/deevnet-kit.txt"
+        src: files/pi-backend/backend.txt
+        dest: "{{ chroot_root }}/boot/backend.txt"
         mode: "0644"
       when: not backend_vm
 
-    # Beside deevnet-kit.txt, so the instructions are readable from any laptop
+    # Beside backend.txt, so the instructions are readable from any laptop
     # the moment the card is flashed - the owner edits that file before the
-    # first boot, and this says what to put in it. Also in /opt/deevnet-kit.
+    # first boot, and this says what to put in it. Also in /opt/backend.
     - name: Put the instructions on the boot partition
       ansible.builtin.copy:
         src: files/pi-backend/README.txt
@@ -484,24 +493,24 @@
         owner: root
         group: root
       loop:
-        - {src: README.txt, dest: /opt/deevnet-kit/README.txt}
-        - {src: deevnet-kit-setup.service, dest: /etc/systemd/system/deevnet-kit-setup.service}
-        - {src: deevnet-kit-growroot.service, dest: /etc/systemd/system/deevnet-kit-growroot.service}
-        - {src: deevnet-kit-growroot, dest: /usr/local/sbin/deevnet-kit-growroot, mode: "0755"}
-        - {src: 50-deevnet-kit-dhcp.network, dest: /etc/systemd/network/50-deevnet-kit-dhcp.network}
+        - {src: README.txt, dest: /opt/backend/README.txt}
+        - {src: backend-setup.service, dest: /etc/systemd/system/backend-setup.service}
+        - {src: backend-growroot.service, dest: /etc/systemd/system/backend-growroot.service}
+        - {src: backend-growroot, dest: /usr/local/sbin/backend-growroot, mode: "0755"}
+        - {src: 50-backend-dhcp.network, dest: /etc/systemd/network/50-backend-dhcp.network}
       when: backend_vm
 
     - name: Create first boot's drop-in directory
       ansible.builtin.file:
-        path: "{{ chroot_root }}/etc/systemd/system/deevnet-kit-firstboot.service.d"
+        path: "{{ chroot_root }}/etc/systemd/system/backend-firstboot.service.d"
         state: directory
         mode: "0755"
       when: backend_vm
 
     - name: First boot reads what setup wrote, and waits for it
       ansible.builtin.copy:
-        src: files/vm-backend/deevnet-kit-firstboot-vm.conf
-        dest: "{{ chroot_root }}/etc/systemd/system/deevnet-kit-firstboot.service.d/vm.conf"
+        src: files/vm-backend/backend-firstboot-vm.conf
+        dest: "{{ chroot_root }}/etc/systemd/system/backend-firstboot.service.d/vm.conf"
         mode: "0644"
       when: backend_vm
 
@@ -540,8 +549,8 @@
 
     - name: Bound the wait for NTP
       ansible.builtin.copy:
-        src: files/pi-backend/time-wait-sync-deevnet-kit.conf
-        dest: "{{ chroot_root }}/etc/systemd/system/systemd-time-wait-sync.service.d/deevnet-kit.conf"
+        src: files/pi-backend/time-wait-sync-backend.conf
+        dest: "{{ chroot_root }}/etc/systemd/system/systemd-time-wait-sync.service.d/backend.conf"
         mode: "0644"
 
     - name: Enable the wait for NTP
@@ -588,7 +597,7 @@
       changed_when: false
 
     # Every card would otherwise present the SSH identity of the image it was
-    # flashed from. deevnet-kit-ssh-hostkeys.service makes new ones on first
+    # flashed from. backend-ssh-hostkeys.service makes new ones on first
     # boot.
     - name: Remove the SSH host keys the image was built with
       ansible.builtin.shell:
@@ -604,7 +613,7 @@
     # Hand-off on a VM (CHG-0074): what Debian's nocloud image leaves open
     # ------------------------------------------------------------
     # nocloud lets root sign in with no password, for testing images. The
-    # owner's login comes from deevnet-kit setup on the console; root has none.
+    # owner's login comes from tenant2backend setup on the console; root has none.
     - name: Lock root's password
       ansible.builtin.command:
         cmd: "chroot {{ chroot_root }} usermod --password '!' root"

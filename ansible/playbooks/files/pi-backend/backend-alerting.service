@@ -1,9 +1,9 @@
-# deevnet-kit - the tenant's alerting, written again from the card's state
+# tenant2backend - the tenant's alerting, written again from the card's state
 # each boot, once Alertmanager and ntfy are up: the rule groups loaded with
-# `deevnet-kit alerts import`, and on a first boot the phone's ntfy login.
+# `tenant2backend alerts import`, and on a first boot the phone's ntfy login.
 [Unit]
-Description=deevnet-kit alerting (the tenant's rules and the phone's login)
-ConditionPathExists=/etc/deevnet-kit/kit.json
+Description=tenant2backend alerting (the tenant's rules and the phone's login)
+ConditionPathExists=/etc/backend/kit.json
 Wants=alertmanager.service ntfy.service vmauth.service
 After=alertmanager.service ntfy.service vmauth.service
 # Up to two minutes of retries: vmauth counts as started when its process
@@ -16,7 +16,7 @@ StartLimitBurst=10
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/deevnet-kit alerts sync
+ExecStart=/usr/local/bin/tenant2backend alerts sync
 TimeoutStartSec=300
 Restart=on-failure
 RestartSec=5

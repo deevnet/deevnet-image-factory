@@ -1,5 +1,5 @@
 #!/bin/sh
-# deevnet-kit - grow the root partition and its file system to fill the disk.
+# tenant2backend - grow the root partition and its file system to fill the disk.
 # growpart exits 1 when there is nothing to grow, which is most boots.
 set -eu
 src=$(findmnt -no SOURCE /)

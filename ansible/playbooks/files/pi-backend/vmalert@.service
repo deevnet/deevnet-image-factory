@@ -1,22 +1,22 @@
-# deevnet-kit - the tenant's vmalert (CHG-0072), as on Deevnet (CHG-0071).
+# tenant2backend - the tenant's vmalert (CHG-0072), as on Deevnet (CHG-0071).
 # Started, reloaded and stopped by deevnet-alerting-sync from the writer's
 # files; never by hand. It queries through vmauth's loopback listener with the
 # tenant's read token, so a rule reads only what the tenant can.
 [Unit]
-Description=vmalert for tenant %i (deevnet-kit)
+Description=vmalert for tenant %i (tenant2backend)
 After=vmauth.service alertmanager.service
-ConditionPathExists=/var/lib/deevnet-kit/vmalert/%i/rules.yml
+ConditionPathExists=/var/lib/backend/vmalert/%i/rules.yml
 
 [Service]
 User=vmalert
 Group=vmalert
 SupplementaryGroups=victoria
 # The port is the writer's, in vmalert.env, sourced by the shell as on Deevnet.
-ExecStart=/bin/sh -c 'set -a; . /var/lib/deevnet-kit/vmalert/%i/vmalert.env; exec /usr/local/bin/vmalert-prod \
+ExecStart=/bin/sh -c 'set -a; . /var/lib/backend/vmalert/%i/vmalert.env; exec /usr/local/bin/vmalert-prod \
   -httpListenAddr=127.0.0.1:$${VMALERT_PORT} \
   -datasource.url=http://127.0.0.1:8428 \
-  -datasource.bearerTokenFile=/var/lib/deevnet-kit/vmalert/%i/token \
-  -rule=/var/lib/deevnet-kit/vmalert/%i/rules.yml \
+  -datasource.bearerTokenFile=/var/lib/backend/vmalert/%i/token \
+  -rule=/var/lib/backend/vmalert/%i/rules.yml \
   -notifier.url=http://127.0.0.1:9093 \
   -external.label=tenant=%i \
   -memory.allowedBytes=32MiB'
@@ -28,7 +28,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadOnlyPaths=/var/lib/deevnet-kit/vmalert/%i
+ReadOnlyPaths=/var/lib/backend/vmalert/%i
 
 [Install]
 WantedBy=multi-user.target

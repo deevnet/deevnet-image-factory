@@ -1,9 +1,9 @@
-# deevnet-kit - the metrics store's storage, Deevnet's own (CHG-0070, CHG-0072).
+# tenant2backend - the metrics store's storage, Deevnet's own (CHG-0070, CHG-0072).
 # LOOPBACK ONLY, as are vminsert and vmselect: they take a tenant from the path,
 # so nothing reaches them except through vmauth. 30 days, as the Pi's logs: an
 # SD card is not Deevnet's 90-day data disk.
 [Unit]
-Description=vmstorage, the metrics store's storage (deevnet-kit)
+Description=vmstorage, the metrics store's storage (tenant2backend)
 After=network.target
 
 [Service]

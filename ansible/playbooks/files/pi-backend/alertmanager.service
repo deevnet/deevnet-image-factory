@@ -1,10 +1,10 @@
-# deevnet-kit - Alertmanager, routing the tenant's alerts to its ntfy topics
+# tenant2backend - Alertmanager, routing the tenant's alerts to its ntfy topics
 # (CHG-0071, CHG-0072). Its configuration is written and reloaded by
 # deevnet-log-user. Gossip is off: there is one.
 [Unit]
-Description=Alertmanager (deevnet-kit)
-ConditionPathExists=/etc/deevnet-kit/kit.json
-After=deevnet-kit-firstboot.service
+Description=Alertmanager (tenant2backend)
+ConditionPathExists=/etc/backend/kit.json
+After=backend-firstboot.service
 
 [Service]
 User=alertmanager
@@ -12,7 +12,7 @@ Group=alertmanager
 SupplementaryGroups=victoria
 StateDirectory=alertmanager
 ExecStart=/usr/local/bin/alertmanager \
-  --config.file=/etc/deevnet-kit/alerting/alertmanager.yml \
+  --config.file=/etc/backend/alerting/alertmanager.yml \
   --storage.path=/var/lib/alertmanager \
   --cluster.listen-address= \
   --web.listen-address=127.0.0.1:9093

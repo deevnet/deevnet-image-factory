@@ -1,4 +1,4 @@
-# deevnet-kit - this card's own SSH host keys, made on its first boot.
+# tenant2backend - this card's own SSH host keys, made on its first boot.
 #
 # The build deletes the keys the image was built with, so no two cards - and
 # no card and the build machine - present the same SSH identity. Raspberry Pi
@@ -6,7 +6,7 @@
 # image build is not something this card relies on: if a key is missing when
 # SSH starts, it is made here.
 [Unit]
-Description=deevnet-kit SSH host keys (first boot)
+Description=tenant2backend SSH host keys (first boot)
 ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
 Before=ssh.service sshd.service
 

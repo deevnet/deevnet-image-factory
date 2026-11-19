@@ -1,23 +1,23 @@
-# deevnet-kit - silo, the bucket store Deevnet's buckets run on (CHG-0069,
+# tenant2backend - silo, the bucket store Deevnet's buckets run on (CHG-0069,
 # CHG-0073), built for arm64 from the same source tag. DISABLED until the
-# first `deevnet-kit bucket add`, which writes its root login and starts it:
+# first `tenant2backend bucket add`, which writes its root login and starts it:
 # a Pi without buckets pays no memory for it. TLS on 9000 with the card's
 # certificate; no console.
 [Unit]
-Description=silo, the bucket store (deevnet-kit)
-ConditionPathExists=/etc/deevnet-kit/silo.env
-After=deevnet-kit-firstboot.service
+Description=silo, the bucket store (tenant2backend)
+ConditionPathExists=/etc/backend/silo.env
+After=backend-firstboot.service
 
 [Service]
 User=silo
 Group=silo
-SupplementaryGroups=deevnet-kit
+SupplementaryGroups=backend
 StateDirectory=silo
-# The root login, made by deevnet-kit with the first bucket.
-EnvironmentFile=/etc/deevnet-kit/silo.env
+# The root login, made by tenant2backend with the first bucket.
+EnvironmentFile=/etc/backend/silo.env
 ExecStart=/usr/local/bin/silo server /var/lib/silo \
   --address :9000 \
-  --certs-dir /etc/deevnet-kit/silo-certs
+  --certs-dir /etc/backend/silo-certs
 MemoryMax=384M
 Restart=on-failure
 RestartSec=5

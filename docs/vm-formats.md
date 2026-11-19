@@ -7,7 +7,7 @@ VHDX for a Hyper-V Generation 2 machine.
 ## Overview
 
 Both formats carry the VM's raw disk unchanged, so everything in [vm-backend.md](vm-backend.md)
-about the first boot holds: `deevnet-kit setup` asks on the console, and `deevnet-kit-growroot`
+about the first boot holds: `tenant2backend setup` asks on the console, and `backend-growroot`
 grows the root to fill the disk. Nothing is built a second time. The target converts the disk,
 compares each conversion with it (`qemu-img compare`), and only then packs it.
 

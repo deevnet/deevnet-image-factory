@@ -6,7 +6,7 @@ same for arm64, for UTM on Apple Silicon (CHG-0077).
 
 ## Overview
 
-The VM runs exactly what the Pi image runs, with the same app contract, `deevnet-kit` and
+The VM runs exactly what the Pi image runs, with the same app contract, `tenant2backend` and
 self-test. It is built by the same play, `ansible/playbooks/pi-backend-config.yml`, with
 `medium=vm`. Everything in [pi-backend.md](pi-backend.md) about the services, the self-test and the
 known differences from Deevnet holds here. This page covers only what differs.
@@ -15,10 +15,10 @@ known differences from Deevnet holds here. This page covers only what differs.
 |---|---|---|
 | Base image | Raspberry Pi OS Lite, through the shared Packer step | Debian 12 `nocloud`, dated build, pinned by SHA512 |
 | Architecture | arm64 | amd64 |
-| Owner's settings | `deevnet-kit.txt` on the boot partition | `deevnet-kit setup` on the console (tty1), written to `/etc/deevnet-kit/deevnet-kit.txt` |
-| Owner's login | `userconf.txt` and `ssh` on the boot partition | `deevnet-kit setup`: a user in `sudo`, a password, and an optional SSH key that makes SSH key-only |
-| Network | Raspberry Pi OS's NetworkManager; Wi-Fi from `deevnet-kit.txt` | `systemd-networkd`, DHCP on any Ethernet adapter with the MAC as client ID; bridged only |
-| Disk | 8G card image, grown by Raspberry Pi OS | 16G sparse disk; `deevnet-kit-growroot` grows the root to fill a bigger disk on every boot |
+| Owner's settings | `backend.txt` on the boot partition | `tenant2backend setup` on the console (tty1), written to `/etc/backend/backend.txt` |
+| Owner's login | `userconf.txt` and `ssh` on the boot partition | `tenant2backend setup`: a user in `sudo`, a password, and an optional SSH key that makes SSH key-only |
+| Network | Raspberry Pi OS's NetworkManager; Wi-Fi from `backend.txt` | `systemd-networkd`, DHCP on any Ethernet adapter with the MAC as client ID; bridged only |
+| Disk | 8G card image, grown by Raspberry Pi OS | 16G sparse disk; `backend-growroot` grows the root to fill a bigger disk on every boot |
 | Clock | `fake-hwclock`, seeded with the build's time | the hypervisor's |
 | What the base leaves open | `a_autoprov`, from the Packer step: removed | root signs in with no password: locked, and the build fails if not |
 
@@ -26,7 +26,7 @@ known differences from Deevnet holds here. This page covers only what differs.
 
 The same pinned versions as the Pi, for amd64 (`PI_BACKEND_*_amd64` in the Makefile):
 
-- `deevnet-kit` and `deevnet-log-user`, staged by `make stage-vm` in `deevnet-provisioning-api`;
+- `tenant2backend` and `deevnet-log-user`, staged by `make stage-vm` in `deevnet-provisioning-api`;
 - the log bridge, staged by `make stage-pi PI_ARCH=amd64` in `deevnet-log-bridge` at the commit the
   Pi pins;
 - silo, the static binary from the amd64 image Deevnet runs (`container-images/silo`), which the
@@ -83,11 +83,11 @@ when Linux starts, because Linux has no driver for it.
 
 ## First Boot
 
-1. `deevnet-kit-growroot` grows the root file system to fill the disk.
-2. `deevnet-kit-setup` asks on tty1 for the tenant, index, host name and the owner's login, and
-   writes `/etc/deevnet-kit/deevnet-kit.txt` last. The console's login prompt waits for it.
-3. `deevnet-kit-firstboot` requires setup, then runs `deevnet-kit init --config
-   /etc/deevnet-kit/deevnet-kit.txt`, as on a Pi. If setup fails, first boot doesn't run, and the
+1. `backend-growroot` grows the root file system to fill the disk.
+2. `backend-setup` asks on tty1 for the tenant, index, host name and the owner's login, and
+   writes `/etc/backend/backend.txt` last. The console's login prompt waits for it.
+3. `backend-firstboot` requires setup, then runs `tenant2backend init --config
+   /etc/backend/backend.txt`, as on a Pi. If setup fails, first boot doesn't run, and the
    next boot asks again.
 
 From there the VM is a Pi: the same services start, and the self-test runs on every boot.

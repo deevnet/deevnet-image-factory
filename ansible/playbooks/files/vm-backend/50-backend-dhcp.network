@@ -1,4 +1,4 @@
-# deevnet-kit - DHCP on the VM's network adapter (CHG-0074). Debian's nocloud
+# tenant2backend - DHCP on the VM's network adapter (CHG-0074). Debian's nocloud
 # image configures no network of its own. The MAC is the DHCP client ID, so a
 # reservation on the owner's router holds. mDNS is avahi's, as on the Pi.
 [Match]

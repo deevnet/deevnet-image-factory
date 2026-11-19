@@ -1,5 +1,5 @@
 #!/bin/bash
-# deevnet-kit - from deevnet.mgmt roles/alerting (CHG-0071), with the Pi paths (CHG-0072)
+# tenant2backend - from deevnet.mgmt roles/alerting (CHG-0071), with the Pi paths (CHG-0072)
 #
 # Brings the running services in line with the log store writer's files
 # (CHG-0071). Run as root by deevnet-alerting-sync.path whenever the writer
@@ -11,7 +11,7 @@
 # - ntfy's users changed: ntfy restarts, which is how it reads declared users.
 set -euo pipefail
 
-dir=/var/lib/deevnet-kit/vmalert
+dir=/var/lib/backend/vmalert
 state=/run/deevnet-alerting
 mkdir -p "$state"
 
@@ -44,7 +44,7 @@ while read -r unit _; do
   fi
 done < <(systemctl list-units --all --plain --no-legend 'vmalert@*.service')
 
-users=/etc/deevnet-kit/alerting/ntfy-server.yml
+users=/etc/backend/alerting/ntfy-server.yml
 if [[ -f $users ]]; then
   sum=$(sha256sum "$users" | cut -d' ' -f1)
   if [[ $sum != "$(cat "$state/ntfy.sum" 2>/dev/null || true)" ]]; then

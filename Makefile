@@ -477,7 +477,7 @@ pi-compress-image-pidp11: $(PI_PIDP11_AUTOPROV_IMG)
 # Pi take-home backend image Build
 # ------------------------------------------------------------
 # A mini Deevnet for a tenant to take home: Mosquitto, VictoriaLogs, vmauth,
-# the log bridge and deevnet-kit, with the same app contract as Deevnet and
+# the log bridge and tenant2backend, with the same app contract as Deevnet and
 # no Deevnet access (docs/pi-backend.md). Its inputs are arm64 binaries from
 # the artifact server, fetched into build/pi-backend/.
 
@@ -490,7 +490,7 @@ PI_BACKEND_INPUTS := $(CURDIR)/build/pi-backend
 # the exact file it installs (<binary>:<version>). Staging a new build changes
 # nothing here until its version is bumped. The log bridge's is one commit past
 # its v0.1.1 tag: what -latest pointed at when pinned.
-PI_BACKEND_DEEVNET_BINARIES := deevnet-kit:v0.27.0 deevnet-log-user:v0.27.0 deevnet-log-bridge:v0.1.1-1-g20abb75
+PI_BACKEND_DEEVNET_BINARIES := tenant2backend:v0.28.0 deevnet-log-user:v0.28.0 deevnet-log-bridge:v0.1.1-1-g20abb75
 
 # Upstream releases, pinned to the versions Deevnet's log store runs
 # (deevnet.mgmt victorialogs role). The checksums are the release's own.
@@ -768,12 +768,12 @@ pi-compress-image-backend: $(PI_BACKEND_AUTOPROV_IMG)
 # Take-home VM image Build (CHG-0074)
 # ------------------------------------------------------------
 # The Pi's take-home backend as an amd64 virtual machine (qcow2) for Proxmox
-# and KVM: the same services, deevnet-kit and self-test, built by the same
+# and KVM: the same services, tenant2backend and self-test, built by the same
 # configuration play with medium=vm (docs/vm-backend.md). It starts from
 # Debian's official bookworm "nocloud" image, as the Pi image starts from
 # Raspberry Pi OS: no cloud-init, and the play locks the root login that image
 # leaves open. A VM has no boot partition to edit, so its first boot asks on the
-# console (deevnet-kit setup).
+# console (tenant2backend setup).
 
 # VM_ARCH=arm64 builds the same VM for UTM's QEMU backend on a Mac with Apple
 # Silicon (CHG-0077), from Debian's arm64 image with the Pi's arm64 inputs; its
@@ -788,7 +788,7 @@ VM_BACKEND_RAW        := $(VM_BACKEND_BUILD)/$(VM_BACKEND_IMAGE_NAME).raw
 VM_BACKEND_QCOW2      := $(CURDIR)/$(VM_BACKEND_IMAGE_NAME).qcow2
 VM_BACKEND_MNT        := /mnt/vm-backend-image$(VM_ARCH_SUFFIX)
 # The disk the VM sees. qcow2 is sparse, so the file stays small; the root
-# file system grows to fill a bigger disk on every boot (deevnet-kit-growroot).
+# file system grows to fill a bigger disk on every boot (backend-growroot).
 VM_BACKEND_DISK_SIZE  := 16G
 
 # Debian's dated build, pinned with the SHA512 Debian publishes beside it.
