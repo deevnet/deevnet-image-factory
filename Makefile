@@ -160,6 +160,7 @@ PVE_PXE_OUTPUT_DIR := $(CURDIR)/packer/proxmox/pve-iso/pxe
 .PHONY: help init validate check clean check-deps check-loop-devices
 .PHONY: pi-bookworm-image pi-resize-image pi-sdr pi-sdr-config pi-compress-image
 .PHONY: pi-pidp11 pi-bookworm-image-pidp11 pi-resize-image-pidp11 pi-pidp11-config pi-compress-image-pidp11
+.PHONY: vm-backend-arm64 vm-backend-arm64-stage-upstream vm-backend-arm64-publish
 .PHONY: vm-backend vm-backend-stage-upstream vm-backend-inputs vm-backend-base vm-backend-config vm-backend-compress vm-backend-publish
 .PHONY: iso-backend iso-backend-boot iso-backend-payload iso-backend-image iso-backend-publish
 .PHONY: vm-formats vm-formats-publish
@@ -194,6 +195,9 @@ help:
 	@echo "  vm-backend             Build the take-home tenant backend as an amd64 VM image (qcow2, Proxmox/KVM)"
 	@echo "  vm-backend-stage-upstream  Stage the amd64 releases and Debian's base image, throttled (sudo)"
 	@echo "  vm-backend-publish     Publish the built .qcow2 to the tenant downloads tree (sudo)"
+	@echo "  vm-backend-arm64       Build the same VM for arm64 (qcow2, UTM's QEMU backend on Apple Silicon)"
+	@echo "  vm-backend-arm64-stage-upstream  Stage the arm64 releases and Debian's arm64 base image, throttled (sudo)"
+	@echo "  vm-backend-arm64-publish  Publish the arm64 .qcow2 to the tenant downloads tree (sudo)"
 	@echo "  iso-backend            Build the take-home installer ISO (hybrid BIOS/UEFI) from the VM backend's disk (sudo)"
 	@echo "  iso-backend-publish    Publish the built .iso to the tenant downloads tree (sudo)"
 	@echo "  vm-formats             Convert the VM backend's disk, unchanged, to an OVA (VirtualBox) and a VHDX (Hyper-V Gen2)"
@@ -771,20 +775,31 @@ pi-compress-image-backend: $(PI_BACKEND_AUTOPROV_IMG)
 # leaves open. A VM has no boot partition to edit, so its first boot asks on the
 # console (deevnet-kit setup).
 
-VM_BACKEND_IMAGE_NAME := debian-bookworm-$(PI_IMAGE_PLATFORM)-vm-backend
-VM_BACKEND_BUILD      := $(CURDIR)/build/vm-backend
-VM_BACKEND_INPUTS     := $(CURDIR)/build/vm-backend-inputs
+# VM_ARCH=arm64 builds the same VM for UTM's QEMU backend on a Mac with Apple
+# Silicon (CHG-0077), from Debian's arm64 image with the Pi's arm64 inputs; its
+# files carry an -arm64 suffix. amd64 keeps the names it was published under,
+# and the installer ISO and the OVA/VHDX are made from the amd64 disk only.
+VM_ARCH ?= amd64
+VM_ARCH_SUFFIX        := $(if $(filter amd64,$(VM_ARCH)),,-$(VM_ARCH))
+VM_BACKEND_IMAGE_NAME := debian-bookworm-$(PI_IMAGE_PLATFORM)-vm-backend$(VM_ARCH_SUFFIX)
+VM_BACKEND_BUILD      := $(CURDIR)/build/vm-backend$(VM_ARCH_SUFFIX)
+VM_BACKEND_INPUTS     := $(CURDIR)/build/vm-backend-inputs$(VM_ARCH_SUFFIX)
 VM_BACKEND_RAW        := $(VM_BACKEND_BUILD)/$(VM_BACKEND_IMAGE_NAME).raw
 VM_BACKEND_QCOW2      := $(CURDIR)/$(VM_BACKEND_IMAGE_NAME).qcow2
-VM_BACKEND_MNT        := /mnt/vm-backend-image
+VM_BACKEND_MNT        := /mnt/vm-backend-image$(VM_ARCH_SUFFIX)
 # The disk the VM sees. qcow2 is sparse, so the file stays small; the root
 # file system grows to fill a bigger disk on every boot (deevnet-kit-growroot).
 VM_BACKEND_DISK_SIZE  := 16G
 
 # Debian's dated build, pinned with the SHA512 Debian publishes beside it.
 VM_DEBIAN_BUILD  := 20261117-2665
-VM_DEBIAN_IMAGE  := debian-12-nocloud-amd64-$(VM_DEBIAN_BUILD).qcow2
-VM_DEBIAN_SHA512 := 43888727748a395aeec05646db5042fdccec9e9d8bb1af6250fb9476ad3925abb483695753075d6ede9e7a4ca3825a2d10cf0ba3f39663e2a402144d94294369
+VM_DEBIAN_IMAGE  := debian-12-nocloud-$(VM_ARCH)-$(VM_DEBIAN_BUILD).qcow2
+VM_DEBIAN_SHA512_amd64 := 43888727748a395aeec05646db5042fdccec9e9d8bb1af6250fb9476ad3925abb483695753075d6ede9e7a4ca3825a2d10cf0ba3f39663e2a402144d94294369
+VM_DEBIAN_SHA512_arm64 := 7be44446e096795ddf2b3f5e16f6b17f89e7f1ba4ae45f56ce2637ed91d61e82c4a5d03a3a9b5b4945acf8318ee5303510def620926429f8d1d7566d150e4871
+VM_DEBIAN_SHA512 := $(VM_DEBIAN_SHA512_$(VM_ARCH))
+ifeq ($(VM_DEBIAN_SHA512),)
+$(error VM_ARCH must be amd64 or arm64, not $(VM_ARCH))
+endif
 VM_DEBIAN_URL    := https://cloud.debian.org/images/cloud/bookworm/$(VM_DEBIAN_BUILD)/$(VM_DEBIAN_IMAGE)
 VM_DEBIAN_PATH   := vm-images/debian
 
@@ -795,9 +810,19 @@ APT_DL_LIMIT ?= 1500
 vm-backend: vm-backend-inputs vm-backend-base vm-backend-config vm-backend-compress
 	echo "$(GREEN)✓ VM backend image complete: $(VM_BACKEND_QCOW2)$(NC)"
 
-# One-time, on the Builder: the amd64 releases, and Debian's base image.
+# The same VM for UTM on Apple Silicon (CHG-0077).
+vm-backend-arm64:
+	$(MAKE) VM_ARCH=arm64 vm-backend
+
+vm-backend-arm64-stage-upstream:
+	$(MAKE) VM_ARCH=arm64 vm-backend-stage-upstream
+
+vm-backend-arm64-publish:
+	$(MAKE) VM_ARCH=arm64 vm-backend-publish
+
+# One-time, on the Builder: the releases for VM_ARCH, and Debian's base image.
 vm-backend-stage-upstream:
-	$(call backend_stage_upstream,amd64)
+	$(call backend_stage_upstream,$(VM_ARCH))
 	A="$(PI_BACKEND_ARTIFACTS_ROOT)/$(VM_DEBIAN_PATH)"
 	sudo install -d -o nginx -g nginx -m 0755 "$$A"
 	if [[ -f "$$A/$(VM_DEBIAN_IMAGE)" ]] && echo "$(VM_DEBIAN_SHA512)  $$A/$(VM_DEBIAN_IMAGE)" | sha512sum -c --quiet - 2>/dev/null; then
@@ -812,7 +837,7 @@ vm-backend-stage-upstream:
 	echo "$(GREEN)✓ Debian base staged under $$A$(NC)"
 
 vm-backend-inputs:
-	$(call backend_inputs,amd64,$(VM_BACKEND_INPUTS))
+	$(call backend_inputs,$(VM_ARCH),$(VM_BACKEND_INPUTS))
 
 # Debian's image as a raw disk of VM_BACKEND_DISK_SIZE, its root (partition 1)
 # grown to fill it.

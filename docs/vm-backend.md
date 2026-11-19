@@ -1,7 +1,8 @@
 # Take-Home VM Backend Image Build
 
 This document covers building the `vm-backend` image (CHG-0074): the take-home backend of
-[`pi-backend`](pi-backend.md) as an **amd64 virtual machine** (qcow2) for Proxmox and KVM.
+[`pi-backend`](pi-backend.md) as an **amd64 virtual machine** (qcow2) for Proxmox and KVM, and the
+same for arm64, for UTM on Apple Silicon (CHG-0077).
 
 ## Overview
 
@@ -57,6 +58,28 @@ make vm-backend-publish
 | `vm-backend-base` | Debian's qcow2 as a raw disk of `VM_BACKEND_DISK_SIZE`, the GPT backup header moved and the root partition grown |
 | `vm-backend-config` | The raw disk's root mounted, the build host's `resolv.conf` lent for apt (Debian's points into `/run`), and the play run with `medium=vm` |
 | `vm-backend-compress` | A compressed qcow2 and its sha256 |
+
+## arm64, for UTM
+
+`VM_ARCH=arm64` builds the same virtual machine for UTM's QEMU backend on a Mac with Apple Silicon
+(CHG-0077): Debian's bookworm arm64 `nocloud` image of the same dated build, pinned by its own
+SHA512, and the arm64 inputs the Pi image uses (`PI_BACKEND_*_arm64`, the arm64 kit, log bridge
+and silo). The play is the same, `medium=vm`; nothing in it depends on the architecture. The play
+runs in the arm64 root through `qemu-aarch64-static`, as the Pi image's does.
+
+```bash
+make vm-backend-arm64-stage-upstream   # Debian's arm64 image; the releases are the Pi's
+make vm-backend-arm64                  # debian-bookworm-mobile-vm-backend-arm64.qcow2
+make vm-backend-arm64-publish
+```
+
+Its files and build directories carry an `-arm64` suffix; the amd64 names are unchanged. The
+installer ISO and the OVA/VHDX are made from the amd64 disk only.
+
+It is proven on the Builder under `qemu-system-aarch64`, emulated: the `virt` machine, edk2's
+arm64 UEFI, the disk and the network on virtio, and a `virtio-gpu-pci` display, upstream qemu's
+nearest to UTM's `virtio-ramfb`. A `ramfb` display alone shows the firmware and GRUB but goes dark
+when Linux starts, because Linux has no driver for it.
 
 ## First Boot
 
