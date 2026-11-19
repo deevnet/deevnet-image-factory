@@ -1,4 +1,4 @@
-# deevnet-kit - an example unit for your app, run as a container.
+# tenant2backend - an example unit for your app, run as a container.
 #
 # 1. On your laptop, build for the Pi and copy the image across (no registry
 #    needed):
@@ -8,13 +8,13 @@
 # 2. On the Pi, re-create your app's broker account with the password it had
 #    on Deevnet (MQTT_PASSWORD in your Deevnet kit.env), then export kit.env
 #    with that login in it:
-#      sudo deevnet-kit account add backend --subscribe 'sensors/+/telemetry' \
+#      sudo tenant2backend account add backend --subscribe 'sensors/+/telemetry' \
 #          --password-file backend.pw
-#      sudo deevnet-kit export /opt/my-app --app backend --password-file backend.pw
+#      sudo tenant2backend export /opt/my-app --app backend --password-file backend.pw
 #      shred -u backend.pw
 #
 # 3. Install and start this unit:
-#      sudo cp /opt/deevnet-kit/examples/my-app.service /etc/systemd/system/
+#      sudo cp /opt/backend/examples/my-app.service /etc/systemd/system/
 #      sudo systemctl daemon-reload && sudo systemctl enable --now my-app
 #
 # Host networking, and localhost for every service: a container cannot resolve
@@ -32,8 +32,8 @@ ExecStart=/usr/bin/podman run --rm --name my-app --network host \
   --env-file /opt/my-app/kit.env \
   -e MQTT_HOST=localhost -e LOG_ENDPOINT=https://localhost:8427 \
   -e GRAFANA_URL=https://localhost:3000 \
-  -e MQTT_CA_FILE=/kit/deevnet-kit-ca.pem -e GRAFANA_CA_CERT=/kit/deevnet-kit-ca.pem \
-  -v /opt/my-app/deevnet-kit-ca.pem:/kit/deevnet-kit-ca.pem:ro \
+  -e MQTT_CA_FILE=/kit/backend-ca.pem -e GRAFANA_CA_CERT=/kit/backend-ca.pem \
+  -v /opt/my-app/backend-ca.pem:/kit/backend-ca.pem:ro \
   ${IMAGE}
 ExecStop=/usr/bin/podman stop -t 10 my-app
 Restart=on-failure

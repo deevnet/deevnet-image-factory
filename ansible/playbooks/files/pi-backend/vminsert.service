@@ -1,7 +1,7 @@
-# deevnet-kit - the metrics store's write path, loopback only (CHG-0072).
+# tenant2backend - the metrics store's write path, loopback only (CHG-0072).
 # Header tenancy off: the partition is the path vmauth wrote, never a header.
 [Unit]
-Description=vminsert, the metrics store's write path (deevnet-kit)
+Description=vminsert, the metrics store's write path (tenant2backend)
 After=vmstorage.service
 Wants=vmstorage.service
 

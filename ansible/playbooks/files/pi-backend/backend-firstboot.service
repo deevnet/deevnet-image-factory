@@ -1,13 +1,13 @@
-# deevnet-kit - first boot. Runs once: kit.json's existence is what says it ran.
+# tenant2backend - first boot. Runs once: kit.json's existence is what says it ran.
 # It chooses the tenant, makes this card's CA, certificate and tokens, and
 # writes the broker's and the log store's configuration.
 #
-# It also applies the owner's hostname= and Wi-Fi from deevnet-kit.txt, before
+# It also applies the owner's hostname= and Wi-Fi from backend.txt, before
 # it issues the certificate, so the certificate carries the name and the
 # Wi-Fi address devices will dial.
 [Unit]
-Description=deevnet-kit first boot (tenant, CA, tokens)
-ConditionPathExists=!/etc/deevnet-kit/kit.json
+Description=tenant2backend first boot (tenant, CA, tokens)
+ConditionPathExists=!/etc/backend/kit.json
 # Online first, so the certificate names the address devices will dial; and
 # after the clock is set, so the card's CA and certificate start today.
 Wants=network-online.target time-sync.target
@@ -17,7 +17,7 @@ Before=mosquitto.service vmauth.service deevnet-log-bridge.service grafana.servi
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/deevnet-kit init --config /boot/firmware/deevnet-kit.txt
+ExecStart=/usr/local/bin/tenant2backend init --config /boot/firmware/backend.txt
 
 [Install]
 WantedBy=multi-user.target

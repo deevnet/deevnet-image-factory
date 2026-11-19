@@ -1,22 +1,22 @@
-# deevnet-kit - the console's stand-in for the Pi's boot partition (CHG-0074).
+# tenant2backend - the console's stand-in for the Pi's boot partition (CHG-0074).
 #
 # A VM's disk has nothing for its owner to edit before the first boot, so this
 # asks on the console, once: the tenant, its index, the host name, and the
-# owner's login. It writes /etc/deevnet-kit/deevnet-kit.txt last, so that file
-# is what says it ran; first boot (deevnet-kit init) reads it, as a Pi reads
+# owner's login. It writes /etc/backend/backend.txt last, so that file
+# is what says it ran; first boot (tenant2backend init) reads it, as a Pi reads
 # its card's. Until it has run, first boot waits, and the console's login
 # prompt with it: the image has no user to sign in as.
 [Unit]
-Description=deevnet-kit setup on the console (first boot)
-ConditionPathExists=!/etc/deevnet-kit/deevnet-kit.txt
-ConditionPathExists=!/etc/deevnet-kit/kit.json
+Description=tenant2backend setup on the console (first boot)
+ConditionPathExists=!/etc/backend/backend.txt
+ConditionPathExists=!/etc/backend/kit.json
 After=systemd-user-sessions.service systemd-vconsole-setup.service
-Before=getty@tty1.service deevnet-kit-firstboot.service
+Before=getty@tty1.service backend-firstboot.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/deevnet-kit setup
+ExecStart=/usr/local/bin/tenant2backend setup
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty

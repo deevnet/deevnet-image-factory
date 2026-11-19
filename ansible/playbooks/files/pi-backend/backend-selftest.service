@@ -1,0 +1,18 @@
+# tenant2backend - prove the card end to end on every boot: TLS on all three
+# ports, a device log over MQTT, an app log, and both read back through
+# Grafana as the tenant. The result shows in `tenant2backend status`; a failure
+# also shows as a failed unit. Run it again by hand: sudo tenant2backend selftest
+[Unit]
+Description=tenant2backend selftest (the card, end to end)
+ConditionPathExists=/etc/backend/kit.json
+Wants=backend-dashboards.service
+After=backend-dashboards.service mosquitto.service vmauth.service deevnet-log-bridge.service grafana.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/tenant2backend selftest
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

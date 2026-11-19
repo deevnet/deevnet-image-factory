@@ -1,7 +1,7 @@
-# deevnet-kit - the metrics store's read path, loopback only (CHG-0072).
+# tenant2backend - the metrics store's read path, loopback only (CHG-0072).
 # No -deleteAuthKey: a Pi never purges a tenant.
 [Unit]
-Description=vmselect, the metrics store's read path (deevnet-kit)
+Description=vmselect, the metrics store's read path (tenant2backend)
 After=vmstorage.service
 Wants=vmstorage.service
 

@@ -1,26 +1,26 @@
-# deevnet-kit - the log and metrics stores' front door, with Deevnet's
+# tenant2backend - the log and metrics stores' front door, with Deevnet's
 # listeners: TLS on 8427 for everyone; plain HTTP on loopback 8428 for the
 # tenant's vmalert, as Deevnet's reads vmauth on loopback (CHG-0072); the
 # internal routes (reload, metrics) on loopback 8426 only. Its users are
-# rendered by deevnet-log-user from deevnet-kit's state.
+# rendered by deevnet-log-user from tenant2backend's state.
 [Unit]
-Description=vmauth, the authenticating proxy in front of the log store (deevnet-kit)
-ConditionPathExists=/etc/deevnet-kit/kit.json
-After=deevnet-kit-firstboot.service victorialogs.service
+Description=vmauth, the authenticating proxy in front of the log store (tenant2backend)
+ConditionPathExists=/etc/backend/kit.json
+After=backend-firstboot.service victorialogs.service
 Wants=victorialogs.service
 
 [Service]
 User=victoria
 Group=victoria
-SupplementaryGroups=deevnet-kit
+SupplementaryGroups=backend
 ExecStart=/usr/local/bin/vmauth-prod \
-  -auth.config=/etc/deevnet-kit/log/auth/auth.yml \
+  -auth.config=/etc/backend/log/auth/auth.yml \
   -configCheckInterval=30s \
   -httpListenAddr=0.0.0.0:8427,127.0.0.1:8428, \
   -httpInternalListenAddr=,,127.0.0.1:8426 \
   -tls=true,false,false \
-  -tlsCertFile=/etc/deevnet-kit/tls/server.pem \
-  -tlsKeyFile=/etc/deevnet-kit/tls/server-key.pem
+  -tlsCertFile=/etc/backend/tls/server.pem \
+  -tlsKeyFile=/etc/backend/tls/server-key.pem
 Restart=on-failure
 RestartSec=5
 

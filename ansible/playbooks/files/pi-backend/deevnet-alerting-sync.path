@@ -1,12 +1,12 @@
-# deevnet-kit - watch the writer's vmalert directory (CHG-0072), as on Deevnet.
+# tenant2backend - watch the writer's vmalert directory (CHG-0072), as on Deevnet.
 [Unit]
-Description=Watch deevnet-log-user's alerting files (deevnet-kit)
+Description=Watch deevnet-log-user's alerting files (tenant2backend)
 
 [Path]
 # The directory, not the stamp file in it: the writer replaces the stamp by
 # rename, and a watch on the file is lost with the inode it replaced
 # (CHG-0071, Step 7).
-PathChanged=/var/lib/deevnet-kit/vmalert
+PathChanged=/var/lib/backend/vmalert
 Unit=deevnet-alerting-sync.service
 
 [Install]

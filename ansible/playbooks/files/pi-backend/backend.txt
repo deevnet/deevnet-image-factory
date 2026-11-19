@@ -1,4 +1,4 @@
-# deevnet-kit - read ONCE, on the first boot after flashing.
+# tenant2backend - read ONCE, on the first boot after flashing.
 #
 # Set these to your Deevnet tenant's name and index, and your app's topics
 # and log partition header come across unchanged. Find both with:

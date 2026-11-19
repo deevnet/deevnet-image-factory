@@ -3,7 +3,7 @@
 # medium it booted from, lists the computer's disks without that one, writes
 # the take-home system to the disk the owner names and confirms, reads it back
 # to check it, and reboots. The system's first boot is the virtual machine's:
-# deevnet-kit setup on the console, and the root grown to fill the disk.
+# tenant2backend setup on the console, and the root grown to fill the disk.
 
 PATH=/usr/lib/deevnet-installer/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

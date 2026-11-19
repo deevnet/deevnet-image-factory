@@ -6,8 +6,8 @@ take-home backend of [`vm-backend`](vm-backend.md) to a disk of an owner's own a
 ## Overview
 
 The ISO carries the VM's disk, compressed, and writes it as it is. The installed system is the VM,
-so everything in [vm-backend.md](vm-backend.md) about the first boot holds: `deevnet-kit setup` asks
-on the console, and `deevnet-kit-growroot` grows the root to fill the disk. This page covers only
+so everything in [vm-backend.md](vm-backend.md) about the first boot holds: `tenant2backend setup` asks
+on the console, and `backend-growroot` grows the root to fill the disk. This page covers only
 the installer.
 
 Nothing on the ISO is downloaded or built a second time. Its boot files all come from the VM's
