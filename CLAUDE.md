@@ -19,7 +19,9 @@ and tokens on first boot. Don't add Deevnet access to it.
 play with `medium=vm`, on Debian's bookworm `nocloud` image instead of the Packer step. That image
 has no automation user, but it lets root sign in with no password: the play locks root and fails
 the build if it is not locked. The owner's settings and login come from `deevnet-kit setup` on the
-console. A change to the backend lands on both media; keep `medium` for what differs.
+console. A change to the backend lands on both media; keep `medium` for what differs. `VM_ARCH=arm64`
+(`make vm-backend-arm64`, CHG-0077) builds the same VM for UTM on Apple Silicon, with the Pi's arm64
+inputs; don't fork the play for it.
 
 **`iso-backend` is the installer for that VM's disk** (`docs/iso-backend.md`, CHG-0075): a hybrid
 BIOS/UEFI ISO that writes `vm-backend`'s raw disk, unchanged, to a disk the owner names. Everything
