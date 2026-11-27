@@ -90,6 +90,13 @@ PVE_EXPORTS="$$($(PVE_CREDS) $(1) $(2))"
 eval "$$PVE_EXPORTS"
 endef
 
+# The VM hardware profile (ADR-0046) as Packer -var arguments, read from
+# inventory's group_vars/all/vm_profile.yml. Assigned first, as for the
+# credentials: under -e a missing profile stops the recipe before packer runs.
+define vm_profile
+PROFILE_VARS="$$($(CURDIR)/scripts/vm-profile-vars)"
+endef
+
 # ------------------------------------------------------------
 # Raspberry Pi – Bookworm image pipeline
 # ------------------------------------------------------------
@@ -247,7 +254,8 @@ init-proxmox:
 # ------------------------------------------------------------
 validate:
 	cd $(CURDIR)/packer/pi && packer validate sdr-bookworm.pkr.hcl
-	cd $(CURDIR)/packer/proxmox/fedora-base-image && packer validate -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+	$(call vm_profile)
+	cd $(CURDIR)/packer/proxmox/fedora-base-image && packer validate $$PROFILE_VARS -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 # Syntax only: needs no variables, no Proxmox and no ARM builder plugin, so it
 # runs anywhere. `validate` is the full check.
@@ -1197,30 +1205,34 @@ check-loop-devices:
 # ------------------------------------------------------------
 # Uses whatever TF_VAR_proxmox_* are already exported in your shell.
 proxmox-fedora: init-proxmox
-	cd packer/proxmox/fedora-base-image && packer build $(PACKER_EXTRA_ARGS) -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
+	$(call vm_profile)
+	cd packer/proxmox/fedora-base-image && packer build $$PROFILE_VARS $(PACKER_EXTRA_ARGS) -var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 # Same build, with the credentials fetched for that node (never written to disk).
 proxmox-fedora-pve1: init-proxmox
 	$(call pve_creds,$(PVE1_HOST),$(PVE1_NODE))
+	$(call vm_profile)
 	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE1_NODE)...$(NC)"
 	cd packer/proxmox/fedora-base-image
-	packer build -var storage_pool=$(PVE1_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
+	packer build $$PROFILE_VARS -var storage_pool=$(PVE1_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
 		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 proxmox-fedora-pve2: init-proxmox
 	$(call pve_creds,$(PVE2_HOST),$(PVE2_NODE))
+	$(call vm_profile)
 	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) template on node $(PVE2_NODE)...$(NC)"
 	cd packer/proxmox/fedora-base-image
-	packer build -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
+	packer build $$PROFILE_VARS -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
 		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 # The template tenant workloads clone (ADR-0028): fedora-tenant-<ver>, with no
 # a_autoprov. Tenants live on the tenant hypervisor, so it builds there.
 proxmox-fedora-tenant: init-proxmox
 	$(call pve_creds,$(PVE2_HOST),$(PVE2_NODE))
+	$(call vm_profile)
 	echo "$(GREEN)→ Building Fedora $(FEDORA_RELEASE) TENANT template on node $(PVE2_NODE)...$(NC)"
 	cd packer/proxmox/fedora-base-image
-	packer build -var flavor=tenant -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
+	packer build $$PROFILE_VARS -var flavor=tenant -var storage_pool=$(PVE2_STORAGE_POOL) $(PACKER_EXTRA_ARGS) \
 		-var-file=fedora-$(FEDORA_RELEASE).pkrvars.hcl fedora.pkr.hcl
 
 # ------------------------------------------------------------

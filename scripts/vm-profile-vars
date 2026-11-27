@@ -1,0 +1,56 @@
+#!/usr/bin/python3 -I
+"""Print the VM hardware profile as Packer -var arguments (ADR-0046).
+
+Inventory is the profile's only source: group_vars/all/vm_profile.yml under
+$DEEVNET_INVENTORY (deevnet_vm_profile). Never a vault file. The template build
+passes what this prints to `packer build`, so a template starts on the profile
+and the values are never repeated here.
+
+Fails, printing nothing to stdout, when the profile is missing or asks for what
+the template cannot be: the template is SeaBIOS on Proxmox's default machine,
+the profile's choice (ADR-0046 §1).
+"""
+import os
+import shlex
+import sys
+
+import yaml
+
+
+def main():
+    inv = os.environ.get("DEEVNET_INVENTORY", "")
+    path = os.path.join(inv, "group_vars", "all", "vm_profile.yml")
+    try:
+        with open(path, encoding="utf-8") as f:
+            profile = (yaml.safe_load(f) or {}).get("deevnet_vm_profile")
+    except OSError as e:
+        sys.exit(f"vm-profile-vars: cannot read the profile: {e}")
+    if not profile:
+        sys.exit(f"vm-profile-vars: no deevnet_vm_profile in {path}")
+
+    disk = profile.get("disk") or {}
+    want = {
+        "scsi_controller": profile.get("scsihw"),
+        "disk_io_thread": str(disk.get("iothread")) == "1",
+        "disk_discard": str(disk.get("discard")) == "on",
+        "disk_cache_mode": disk.get("cache"),
+        "net_model": profile.get("net_model"),
+        "cpu_type": profile.get("cpu"),
+    }
+    missing = [k for k, v in want.items() if v in (None, "")]
+    if missing:
+        sys.exit(f"vm-profile-vars: the profile has no value for {', '.join(missing)}")
+    if profile.get("disk_bus", "scsi") != "scsi":
+        sys.exit("vm-profile-vars: the template's disk is on the SCSI bus; the profile asks otherwise")
+    if profile.get("bios", "seabios") != "seabios" or profile.get("machine", "") not in ("", None):
+        sys.exit("vm-profile-vars: the template is SeaBIOS on the default machine; the profile asks otherwise")
+
+    args = []
+    for k, v in want.items():
+        v = str(v).lower() if isinstance(v, bool) else str(v)
+        args += ["-var", f"{k}={v}"]
+    print(" ".join(shlex.quote(a) for a in args))
+
+
+if __name__ == "__main__":
+    main()
