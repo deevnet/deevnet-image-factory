@@ -147,6 +147,35 @@ variable "flavor" {
   }
 }
 
+# --- The VM hardware profile (ADR-0046) ------------------------------------
+# No defaults: inventory is the profile's only source. The Make targets pass these
+# from group_vars/all/vm_profile.yml through scripts/vm-profile-vars, so a build
+# without the inventory fails instead of falling back to the plugin's defaults
+# (an LSI controller, which INC-0006 panicked).
+variable "scsi_controller" {
+  type = string
+}
+
+variable "disk_io_thread" {
+  type = bool
+}
+
+variable "disk_discard" {
+  type = bool
+}
+
+variable "disk_cache_mode" {
+  type = string
+}
+
+variable "net_model" {
+  type = string
+}
+
+variable "cpu_type" {
+  type = string
+}
+
 locals {
   # dracut ip= syntax: client:server:gateway:netmask:hostname:interface:autoconf
   # The interface field is deliberately empty - there is exactly one NIC on the
@@ -182,11 +211,15 @@ source "proxmox-iso" "fedora-kickstart" {
   ]
   boot_wait = "10s"
 
-  # Disk configuration
+  # Disk configuration: the controller and the disk's options from the profile
+  scsi_controller = var.scsi_controller
   disks {
     disk_size    = var.os_disk_size
     storage_pool = var.storage_pool
     type         = "scsi"
+    io_thread    = var.disk_io_thread
+    discard      = var.disk_discard
+    cache_mode   = var.disk_cache_mode
   }
 
   # HTTP server for kickstart file (templated for {{ .HTTPIP }} substitution)
@@ -214,7 +247,7 @@ source "proxmox-iso" "fedora-kickstart" {
   # Network configuration
   network_adapters {
     bridge = var.bridge_name
-    model  = "virtio"
+    model  = var.net_model
   }
 
   # Proxmox connection
@@ -227,7 +260,7 @@ source "proxmox-iso" "fedora-kickstart" {
   memory   = 4096
   cores    = 4
   sockets  = 1
-  cpu_type = "host"
+  cpu_type = var.cpu_type
 
   # SSH configuration (user created by kickstart)
   ssh_timeout    = "60m"
